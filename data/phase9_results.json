@@ -1,0 +1,23 @@
+{
+    "solar_scarcity": {
+        "critical_energy_served_kwh": 36.0,
+        "total_unserved_energy_kwh": 0.75,
+        "generator_runtime_hours": 8.333333333333323,
+        "fuel_consumed_liters": 22.30499999999944,
+        "solar_energy_used_kwh": 12.000000000000016
+    },
+    "generator_failure": {
+        "critical_energy_served_kwh": 36.0,
+        "total_unserved_energy_kwh": 70.83333333333337,
+        "generator_runtime_hours": 1.333333333333333,
+        "fuel_consumed_liters": 3.7549999999999955,
+        "solar_energy_used_kwh": 0.0
+    },
+    "comms_blackout": {
+        "critical_energy_served_kwh": 36.0,
+        "total_unserved_energy_kwh": 0.8333333333333333,
+        "generator_runtime_hours": 8.416666666666657,
+        "fuel_consumed_liters": 25.004999999999995,
+        "solar_energy_used_kwh": 0.0
+    }
+}
