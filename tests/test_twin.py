@@ -9,7 +9,7 @@ def test_digital_twin_initial_state() -> None:
     assert twin.grid_state == {"is_available": False, "voltage": 0.0}
     assert twin.solar_state == {"generation_kw": 0.0}
     assert twin.battery_state == {"soc": 0.0, "power_kw": 0.0}
-    assert twin.generator_state == {"power_kw": 0.0, "fuel_liters": 0.0}
+    assert twin.generator_state == {"power_kw": 0.0, "fuel_liters": 0.0, "is_available": True}
     assert twin.load_state == {
         "critical_kw": 0.0,
         "important_kw": 0.0,
@@ -22,7 +22,7 @@ def test_digital_twin_initial_state() -> None:
     assert current_state["grid_state"] == {"is_available": False, "voltage": 0.0}
     assert current_state["solar_state"] == {"generation_kw": 0.0}
     assert current_state["battery_state"] == {"soc": 0.0, "power_kw": 0.0}
-    assert current_state["generator_state"] == {"power_kw": 0.0, "fuel_liters": 0.0}
+    assert current_state["generator_state"] == {"power_kw": 0.0, "fuel_liters": 0.0, "is_available": True}
     assert current_state["load_state"] == {
         "critical_kw": 0.0,
         "important_kw": 0.0,
@@ -41,6 +41,7 @@ def test_digital_twin_update() -> None:
         "battery_kw": -5.0,
         "generator_kw": 0.0,
         "generator_fuel_liters": 500.0,
+        "generator_available": True,
         "load_critical_kw": 5.0,
         "load_important_kw": 3.0,
         "load_flexible_kw": 2.0,
@@ -55,7 +56,7 @@ def test_digital_twin_update() -> None:
     assert current_state["grid_state"] == {"is_available": True, "voltage": 220.5}
     assert current_state["solar_state"] == {"generation_kw": 15.0}
     assert current_state["battery_state"] == {"soc": 85.5, "power_kw": -5.0}
-    assert current_state["generator_state"] == {"power_kw": 0.0, "fuel_liters": 500.0}
+    assert current_state["generator_state"] == {"power_kw": 0.0, "fuel_liters": 500.0, "is_available": True}
     assert current_state["load_state"] == {
         "critical_kw": 5.0,
         "important_kw": 3.0,
@@ -72,7 +73,7 @@ def test_digital_twin_event_detection() -> None:
         "grid_available": True, "grid_voltage": 220.0,
         "solar_kw": 0.0,
         "battery_soc": 100.0, "battery_kw": 0.0,
-        "generator_kw": 0.0, "generator_fuel_liters": 100.0,
+        "generator_kw": 0.0, "generator_fuel_liters": 100.0, "generator_available": True,
         "load_critical_kw": 0.0, "load_important_kw": 0.0, "load_flexible_kw": 0.0, "unserved_kw": 0.0
     }
     twin.update(telemetry_1)
@@ -101,7 +102,7 @@ def test_digital_twin_history_limit() -> None:
         "grid_available": True, "grid_voltage": 220.0,
         "solar_kw": 0.0,
         "battery_soc": 100.0, "battery_kw": 0.0,
-        "generator_kw": 0.0, "generator_fuel_liters": 100.0,
+        "generator_kw": 0.0, "generator_fuel_liters": 100.0, "generator_available": True,
         "load_critical_kw": 0.0, "load_important_kw": 0.0, "load_flexible_kw": 0.0, "unserved_kw": 0.0
     }
     

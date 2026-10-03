@@ -68,6 +68,7 @@ class PhysicalPlant:
             "battery_kw": self.current_batt_kw,
             "generator_kw": self.current_gen_kw,
             "generator_fuel_liters": self.generator.fuel_liters,
+            "generator_available": self.generator.is_available,
             "load_critical_kw": self.load.get_demand_by_category(LoadCategory.CRITICAL),
             "load_important_kw": self.load.get_demand_by_category(LoadCategory.IMPORTANT),
             "load_flexible_kw": self.load.get_demand_by_category(LoadCategory.FLEXIBLE),

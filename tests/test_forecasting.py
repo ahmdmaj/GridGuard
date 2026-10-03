@@ -12,6 +12,7 @@ def get_mock_telemetry() -> TelemetrySnapshot:
         "battery_kw": 0.0,
         "generator_kw": 0.0,
         "generator_fuel_liters": 100.0,
+        "generator_available": True,
         "load_critical_kw": 3.0,
         "load_important_kw": 3.0,
         "load_flexible_kw": 4.0,

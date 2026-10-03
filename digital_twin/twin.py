@@ -16,7 +16,7 @@ class DigitalTwin:
         self.grid_state: Dict[str, Any] = {"is_available": False, "voltage": 0.0}
         self.solar_state: Dict[str, Any] = {"generation_kw": 0.0}
         self.battery_state: Dict[str, Any] = {"soc": 0.0, "power_kw": 0.0}
-        self.generator_state: Dict[str, Any] = {"power_kw": 0.0, "fuel_liters": 0.0}
+        self.generator_state: Dict[str, Any] = {"power_kw": 0.0, "fuel_liters": 0.0, "is_available": True}
         self.load_state: Dict[str, Any] = {
             "critical_kw": 0.0,
             "important_kw": 0.0,
@@ -59,6 +59,7 @@ class DigitalTwin:
         
         self.generator_state["power_kw"] = telemetry["generator_kw"]
         self.generator_state["fuel_liters"] = telemetry["generator_fuel_liters"]
+        self.generator_state["is_available"] = telemetry.get("generator_available", True)
         
         self.load_state["critical_kw"] = telemetry["load_critical_kw"]
         self.load_state["important_kw"] = telemetry["load_important_kw"]

@@ -13,8 +13,11 @@ class ESHCalculator:
         usable_battery_soc = max(0.0, soc - self.battery_min_soc_percent)
         usable_battery_kwh = (usable_battery_soc / 100.0) * self.battery_capacity_kwh
 
-        fuel_liters = twin_state["generator_state"]["fuel_liters"]
-        usable_generator_kwh = fuel_liters / self.generator_fuel_consumption_rate
+        if twin_state["generator_state"].get("is_available", True):
+            fuel_liters = twin_state["generator_state"]["fuel_liters"]
+            usable_generator_kwh = fuel_liters / self.generator_fuel_consumption_rate
+        else:
+            usable_generator_kwh = 0.0
 
         total_available_kwh = usable_battery_kwh + usable_generator_kwh
 
@@ -47,8 +50,11 @@ class ESHCalculator:
         usable_battery_soc = max(0.0, soc - self.battery_min_soc_percent)
         usable_battery_kwh = (usable_battery_soc / 100.0) * self.battery_capacity_kwh
 
-        fuel_liters = twin_state["generator_state"]["fuel_liters"]
-        usable_generator_kwh = fuel_liters / self.generator_fuel_consumption_rate
+        if twin_state["generator_state"].get("is_available", True):
+            fuel_liters = twin_state["generator_state"]["fuel_liters"]
+            usable_generator_kwh = fuel_liters / self.generator_fuel_consumption_rate
+        else:
+            usable_generator_kwh = 0.0
 
         total_available_kwh = usable_battery_kwh + usable_generator_kwh
 
