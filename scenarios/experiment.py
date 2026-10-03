@@ -12,6 +12,7 @@ from metrics.collector import MetricsCollector
 class ExperimentRunner:
     def run_scenario(self, controller_type: str) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         runner = SimulationRunner()
+        runner.plant.battery.current_energy_kwh = 15.0
         twin = DigitalTwin()
 
         if controller_type == "baseline":
@@ -23,16 +24,16 @@ class ExperimentRunner:
         else:
             raise ValueError(f"Unknown controller_type: {controller_type}")
 
-        simulation_steps = 72
+        simulation_steps = 144
 
         for step in range(simulation_steps):
             # A. Scenario Injection
             if step == 12:
                 runner.plant.grid.fail()
-                runner.plant.solar.set_availability(0.2)
-            if step == 48:
+                runner.plant.solar.set_availability(0.0)
+            if step == 120:
                 runner.plant.grid.restore()
-                runner.plant.solar.set_availability(0.8)
+                runner.plant.solar.set_availability(0.5)
 
             # B. Telemetry & Twin
             current_telemetry = runner.plant.get_telemetry(runner.current_time)
