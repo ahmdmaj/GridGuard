@@ -10,9 +10,12 @@ from metrics.esh import ESHCalculator
 from metrics.collector import MetricsCollector
 
 class ExperimentRunner:
+    def __init__(self, start_soc_kwh: float = 15.0) -> None:
+        self.start_soc_kwh = start_soc_kwh
+
     def run_scenario(self, controller_type: str) -> Tuple[Dict[str, float], List[Dict[str, Any]]]:
         runner = SimulationRunner()
-        runner.plant.battery.current_energy_kwh = 15.0
+        runner.plant.battery.current_energy_kwh = self.start_soc_kwh
         twin = DigitalTwin()
 
         if controller_type == "baseline":
