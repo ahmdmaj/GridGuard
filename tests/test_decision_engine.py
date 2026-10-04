@@ -93,11 +93,11 @@ def test_decision_engine_pre_peak_charging() -> None:
     assert cmd1["inverter_mode"] == "GRID_PASS"
     assert "charge_limit_kw" not in cmd1
     
-    # 2. In peak window, SOC low -> SUPPORT
+    # 2. In peak window, SOC low -> stays NORMAL but adds charge_limit_kw
     telem_pre = {"ts": "2026-01-01T17:30:00Z", "v_rms_pu": 1.0, "grid_connected": True, "soc": 50.0}
     cmd2 = engine.evaluate(1.0, 2.0, telem_pre, {}, {})
-    assert engine.current_mode == EngineMode.SUPPORT
-    assert cmd2["inverter_mode"] == "SUPPORT"
+    assert engine.current_mode == EngineMode.NORMAL
+    assert cmd2["inverter_mode"] == "GRID_PASS"
     assert "charge_limit_kw" in cmd2
     
     # 3. In peak window, SOC high -> NORMAL

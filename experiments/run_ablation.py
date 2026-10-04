@@ -4,7 +4,7 @@ import json
 
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
-from intelligence.baseline import BaselineController
+from intelligence.baseline import BaselineHysteresisController
 from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
 from intelligence.forecast.rule import RuleForecastService
@@ -31,7 +31,7 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
         plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
         
     if use_baseline:
-        controller = BaselineController()
+        controller = BaselineHysteresisController()
     else:
         controller = DecisionEngine(config)
         esh_calc = ESHCalculator(config)

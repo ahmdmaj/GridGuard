@@ -3,7 +3,7 @@ import json
 import os
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
-from intelligence.baseline import BaselineController
+from intelligence.baseline import BaselineHysteresisController
 from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
 from metrics.provenance import get_provenance
@@ -49,7 +49,7 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
         plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
         
     if use_baseline:
-        controller = BaselineController()
+        controller = BaselineHysteresisController()
     else:
         controller = DecisionEngine(config)
         esh_calc = ESHCalculator(config)

@@ -1,6 +1,33 @@
 import enum
 from typing import Dict, Any, List
 import datetime
+from dataclasses import dataclass, field
+
+@dataclass
+class DecisionConfig:
+    v_support_enter: float = 0.94
+    v_support_exit: float = 0.96
+    v_island_enter: float = 0.85
+    t_support_enter_s: float = 10.0
+    t_normal_return_s: float = 600.0
+    min_dwell_s: float = 30.0
+    max_transfers_per_hour: int = 4
+    generator_start_esh_hours: float = 2.0
+    generator_stop_esh_hours: float = 12.0
+    critical_reserve_soc: float = 30.0
+    gen_start_delay_hours: float = 0.25
+    gen_start_margin_hours: float = 0.5
+    hard_start_soc: float = 20.0
+    generator_stop_soc: float = 80.0
+    shed_flexible_esh: float = 4.0
+    reconnect_flexible_esh: float = 8.0
+    shed_important_esh: float = 2.0
+    reconnect_important_esh: float = 6.0
+    reserve_floor_soc: float = 50.0
+    pre_peak_start_h: float = 17.0
+    pre_peak_end_h: float = 18.5
+    pre_peak_soc_target: float = 90.0
+    charge_power_cap_kw: float = 5.0
 
 class EngineMode(enum.Enum):
     NORMAL = "NORMAL"
@@ -9,46 +36,14 @@ class EngineMode(enum.Enum):
     GENERATOR_ASSIST = "GENERATOR_ASSIST"
 
 class DecisionEngine:
-    def __init__(self, config: dict = None) -> None:
-        cfg = config or {}
-        
-        # Voltage thresholds
-        self.v_support_enter = cfg.get("v_support_enter", 0.94)
-        self.v_support_exit = cfg.get("v_support_exit", 0.96)
-        self.v_island_enter = cfg.get("v_island_enter", 0.85)
-        
-        # Time thresholds
-        self.t_support_enter_s = cfg.get("t_support_enter_s", 10.0)
-        self.t_normal_return_s = cfg.get("t_normal_return_s", 600.0)
-        self.min_dwell_s = cfg.get("min_dwell_s", 30.0)
-        
-        # Transfers
-        self.max_transfers_per_hour = cfg.get("max_transfers_per_hour", 4)
-        
-        # Generator ESH
-        self.generator_start_esh_hours = cfg.get("generator_start_esh_hours", 2.0)
-        self.generator_stop_esh_hours = cfg.get("generator_stop_esh_hours", 12.0)
-        self.critical_reserve_soc = cfg.get("critical_reserve_soc", 30.0)
-        self.gen_start_delay_hours = cfg.get("gen_start_delay_hours", 0.25)
-        self.gen_start_margin_hours = cfg.get("gen_start_margin_hours", 0.5)
-        self.hard_start_soc = cfg.get("hard_start_soc", 20.0)
-        self.hysteresis_stop_soc = cfg.get("generator_stop_soc", 80.0)
-        
-        # Shedding ESH
-        self.shed_flexible_esh = cfg.get("shed_flexible_esh", 4.0)
-        self.reconnect_flexible_esh = cfg.get("reconnect_flexible_esh", 8.0)
-        self.shed_important_esh = cfg.get("shed_important_esh", 2.0)
-        self.reconnect_important_esh = cfg.get("reconnect_important_esh", 6.0)
-        
-        # Reserve floor
-        self.reserve_floor_soc = cfg.get("reserve_floor_soc", 50.0)
-        
-        # Time logic for pre-peak charging
-        self.pre_peak_start_h = cfg.get("pre_peak_start_h", 17.0)
-        self.pre_peak_end_h = cfg.get("pre_peak_end_h", 18.5)
-        self.pre_peak_soc_target = cfg.get("pre_peak_soc_target", 90.0)
-        self.charge_power_cap_kw = cfg.get("charge_power_cap_kw", 5.0) # Limit to avoid worsening feeder voltage
-
+    def __init__(self, config: dict | DecisionConfig = None) -> None:
+        if isinstance(config, dict):
+            self.cfg = DecisionConfig(**{k: v for k, v in config.items() if hasattr(DecisionConfig, k)})
+        elif isinstance(config, DecisionConfig):
+            self.cfg = config
+        else:
+            self.cfg = DecisionConfig()
+            
         # State
         self.current_mode = EngineMode.NORMAL
         self.time_in_mode_s = 0.0
@@ -77,18 +72,20 @@ class DecisionEngine:
         soc = telemetry.get("soc", 100.0)
         
         # Track voltage timers
-        if not grid_connected or v_pcc < self.v_island_enter:
+        if not grid_connected or v_pcc < self.cfg.v_island_enter:
             self.time_v_below_enter += dt_s
             self.time_v_above_exit = 0.0
-        elif v_pcc < self.v_support_enter:
+        elif v_pcc < self.cfg.v_support_enter:
             self.time_v_below_enter += dt_s
             self.time_v_above_exit = 0.0
-        elif v_pcc >= self.v_support_exit:
+        elif v_pcc >= self.cfg.v_support_exit:
             self.time_v_above_exit += dt_s
             self.time_v_below_enter = 0.0
         else:
             self.time_v_below_enter = 0.0
             self.time_v_above_exit = 0.0
+            
+        trace = []
             
         # Determine base grid/inverter state
         target_mode = self.current_mode
@@ -105,31 +102,30 @@ class DecisionEngine:
                 pass
         
         # Pre-peak charging logic
-        is_pre_peak = self.pre_peak_start_h <= current_hour < self.pre_peak_end_h
+        is_pre_peak = self.cfg.pre_peak_start_h <= current_hour < self.cfg.pre_peak_end_h
         charge_cap_kw = None
         
-        if not grid_connected or v_pcc < self.v_island_enter:
+        if not grid_connected or v_pcc < self.cfg.v_island_enter:
             target_mode = EngineMode.ISLAND
-        elif v_pcc < self.v_support_enter and self.time_v_below_enter >= self.t_support_enter_s:
+        elif v_pcc < self.cfg.v_support_enter and self.time_v_below_enter >= self.cfg.t_support_enter_s:
             if target_mode == EngineMode.NORMAL:
                 target_mode = EngineMode.SUPPORT
-        elif v_pcc >= self.v_support_exit and self.time_v_above_exit >= self.t_normal_return_s and soc >= self.reserve_floor_soc:
+        elif v_pcc >= self.cfg.v_support_exit and self.time_v_above_exit >= self.cfg.t_normal_return_s and soc >= self.cfg.reserve_floor_soc:
             if target_mode in [EngineMode.SUPPORT, EngineMode.ISLAND]:
                 target_mode = EngineMode.NORMAL
                 
-        # If we are supposed to be NORMAL but it's pre-peak and SOC is low, override to SUPPORT
-        if target_mode == EngineMode.NORMAL and is_pre_peak and soc < self.pre_peak_soc_target:
-            target_mode = EngineMode.SUPPORT
-            charge_cap_kw = self.charge_power_cap_kw
+        # If we are supposed to be NORMAL but it's pre-peak and SOC is low, stay NORMAL but set charge limit
+        if target_mode == EngineMode.NORMAL and is_pre_peak and soc < self.cfg.pre_peak_soc_target:
+            charge_cap_kw = self.cfg.charge_power_cap_kw
+            trace.append(f"Pre-peak charging active. Limiting charge power to {charge_cap_kw}kW.")
                 
         # Protect against thrashing limits
         if target_mode != self.current_mode:
-            # If we are trying to go to a LESS protective mode, check limits
-            # ISLAND > SUPPORT > NORMAL
             protective_rank = {EngineMode.ISLAND: 3, EngineMode.SUPPORT: 2, EngineMode.NORMAL: 1, EngineMode.GENERATOR_ASSIST: 4}
             
             if protective_rank[target_mode] < protective_rank[self.current_mode]:
-                if len(self.transfers_h) >= self.max_transfers_per_hour or self.time_in_mode_s < self.min_dwell_s:
+                if len(self.transfers_h) >= self.cfg.max_transfers_per_hour or self.time_in_mode_s < self.cfg.min_dwell_s:
+                    trace.append("Thrashing protection active. Delaying return to lower protective state.")
                     target_mode = self.current_mode # Hold more protective mode
             
         if target_mode != self.current_mode:
@@ -138,36 +134,53 @@ class DecisionEngine:
             self.time_in_mode_s = 0.0
             
         # Load shedding logic (F3: Critical Reserve SOC)
-        # If SOC falls below critical_reserve_soc, shed everything except critical load
-        if soc <= self.critical_reserve_soc:
+        if soc <= self.cfg.critical_reserve_soc:
+            if self.connect_flexible or self.connect_important:
+                trace.append(f"Emergency shed: SOC {soc:.1f}% <= {self.cfg.critical_reserve_soc}%")
             self.connect_flexible = False
             self.connect_important = False
         else:
             if self.connect_flexible:
-                if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
+                if full_esh.get("all_loads_hours", 100.0) < self.cfg.shed_flexible_esh:
+                    trace.append(f"Shed flexible: full ESH {full_esh.get('all_loads_hours')}h < {self.cfg.shed_flexible_esh}h")
                     self.connect_flexible = False
             else:
-                if full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
+                if full_esh.get("critical_and_important_hours", 0.0) >= self.cfg.reconnect_flexible_esh:
+                    trace.append(f"Reconnect flexible: crit+imp ESH {full_esh.get('critical_and_important_hours')}h >= {self.cfg.reconnect_flexible_esh}h")
                     self.connect_flexible = True
 
             if self.connect_important:
-                if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
+                if full_esh.get("critical_and_important_hours", 100.0) < self.cfg.shed_important_esh:
+                    trace.append(f"Shed important: crit+imp ESH {full_esh.get('critical_and_important_hours')}h < {self.cfg.shed_important_esh}h")
                     self.connect_important = False
             else:
-                if full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
+                if full_esh.get("critical_only_hours", 0.0) >= self.cfg.reconnect_important_esh:
+                    trace.append(f"Reconnect important: crit only ESH {full_esh.get('critical_only_hours')}h >= {self.cfg.reconnect_important_esh}h")
                     self.connect_important = True
 
-        # Generator logic (F3: Start when ESH_island_critical_worst_case <= T_gen_delay + T_margin)
-        if not self.generator_requested:
-            # We add a 1% buffer to hard_start_soc to ensure we don't fall below exactly 20.0% due to discrete steps
-            if soc <= (self.hard_start_soc + 1.0):
-                self.generator_requested = True
-            elif shadow_esh.get("critical_only_hours", 100.0) <= (self.gen_start_delay_hours + self.gen_start_margin_hours):
-                self.generator_requested = True
+        # Generator logic (F3: Start when shadow_esh critical worst case <= T_gen_delay + T_margin)
+        if target_mode == EngineMode.NORMAL:
+            if self.generator_requested:
+                trace.append("Grid restored to NORMAL, stopping generator.")
+            self.generator_requested = False
         else:
-            if soc >= self.hysteresis_stop_soc:
-                self.generator_requested = False
-            # Remove the short-cycling ESH stop logic that was incorrectly including fuel
+            if not self.generator_requested:
+                if soc <= (self.cfg.hard_start_soc + 1.0):
+                    trace.append(f"Generator hard start: SOC {soc:.1f}% <= {self.cfg.hard_start_soc + 1.0}%")
+                    self.generator_requested = True
+                elif shadow_esh.get("critical_only_hours", 100.0) < self.cfg.generator_start_esh_hours:
+                    trace.append(f"Generator proactive start: Battery ESH {shadow_esh.get('critical_only_hours')}h < {self.cfg.generator_start_esh_hours}h")
+                    self.generator_requested = True
+                elif shadow_esh.get("critical_only_hours", 100.0) <= (self.cfg.gen_start_delay_hours + self.cfg.gen_start_margin_hours):
+                    trace.append(f"Generator delayed start: Battery ESH {shadow_esh.get('critical_only_hours')}h <= delay+margin")
+                    self.generator_requested = True
+            else:
+                if soc >= self.cfg.generator_stop_soc:
+                    trace.append(f"Generator normal stop: SOC {soc:.1f}% >= {self.cfg.generator_stop_soc}%")
+                    self.generator_requested = False
+                elif shadow_esh.get("all_loads_hours", 0.0) > self.cfg.generator_stop_esh_hours:
+                    trace.append(f"Generator early stop: Battery ESH {shadow_esh.get('all_loads_hours')}h > {self.cfg.generator_stop_esh_hours}h")
+                    self.generator_requested = False
                 
         if self.generator_requested:
             self.current_mode = EngineMode.GENERATOR_ASSIST
@@ -193,7 +206,8 @@ class DecisionEngine:
             "inverter_mode": inv_mode,
             "shed_tier": shed_tier,
             "gen_cmd": gen_cmd,
-            "reason": f"Mode: {self.current_mode.value}. V_pcc: {v_pcc:.3f}"
+            "reason": f"Mode: {self.current_mode.value}. V_pcc: {v_pcc:.3f}",
+            "trace": trace
         }
         
         if charge_cap_kw is not None:

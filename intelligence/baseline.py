@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-class BaselineController:
+class BaselineHysteresisController:
     """
     Representative of a basic UPS + generator setup.
     - Switches to battery (ISLAND) on V < 0.94, instantly, no hysteresis or dwell time.
