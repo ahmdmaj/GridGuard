@@ -1,0 +1,4 @@
+Forecast Type,Battery SOC,Grid,Calc ESH (hrs),Gen Run Cmd,Shed Flexible,Decision Reason
+Persistence,30%,OFF,3.83,False,True,Grid failed. ESH declining. Shedding flexible loads.
+Rule-Based,30%,OFF,0.52,True,True,Grid failed. Critical ESH scarcity. Protecting critical loads only.
+Random Forest (ML),30%,OFF,0.53,True,True,Grid failed. Critical ESH scarcity. Protecting critical loads only.
