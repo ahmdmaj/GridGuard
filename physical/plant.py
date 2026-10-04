@@ -140,26 +140,36 @@ class PhysicalPlant:
         # Update battery step time (the battery in simulator uses SIMULATION_TIMESTEP_MINUTES globally, but we should just let it run)
         # Actually simulator.battery assumes 5 min steps when we call discharge/charge
         
-        # Return combined telemetry
-        telem = {
+        telem = self.generate_telemetry(current_time)
+        
+        # Run PQ node to get formatted grid_pq telemetry
+        pq_telem = self.pq_node.generate_telemetry(current_time, self.v_pcc_pu, grid_connected, self.inverter.current_mode.value, 0)
+        
+        return {"plant_telem": telem, "grid_pq": pq_telem}
+
+    def generate_telemetry(self, current_time: datetime.datetime) -> Dict[str, Any]:
+        """Generates a telemetry snapshot of the current plant state."""
+        # Update feeder voltage preview based on latest state if needed, or just use existing
+        preview_v_pcc = max(0.0, self.feeder.get_voltage_pu(current_time, self.last_p_site_kw))
+        
+        # Ensure solar matches time/overrides
+        current_solar = self.solar.get_generation()
+        
+        grid_connected = (self.inverter.current_mode != InverterMode.ISLAND)
+        return {
             "ts": current_time.isoformat() + "Z",
-            "v_rms_pu": self.v_pcc_pu,
+            "v_rms_pu": preview_v_pcc,
             "v_crit_pu": self.v_crit_pu,
             "grid_connected": grid_connected,
             "soc": self.battery.soc,
             "fuel_liters": self.generator.fuel_liters,
             "gen_available": self.generator.is_available,
-            "solar_kw": self.solar_kw,
+            "solar_kw": current_solar,
             "load_critical_kw": self.loads.get_tier_power_kw("critical", self.v_crit_pu),
             "load_important_kw": self.loads.get_tier_power_kw("important", self.v_crit_pu),
             "load_flexible_kw": self.loads.get_tier_power_kw("non_essential", self.v_crit_pu),
             "unserved_kw": self.unserved_kw,
             "sts_state": self.inverter.current_mode.value,
             "transfer_count": len(self.inverter.__dict__.get("transfers_h", [])), # Mocked
-            "dropout_ms": dropout_ms
+            "dropout_ms": 0.0 # Unknown preview
         }
-        
-        # Run PQ node to get formatted grid_pq telemetry
-        pq_telem = self.pq_node.generate_telemetry(current_time, self.v_pcc_pu, grid_connected, self.inverter.current_mode.value, 0)
-        
-        return {"plant_telem": telem, "grid_pq": pq_telem}

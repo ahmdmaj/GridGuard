@@ -64,4 +64,4 @@ class FeederModel:
         noise_pu = self.rng.normal(0.0, self.noise_sigma_pu)
         
         v_pcc_pu = v_source_pu - v_drop_pu - sag_pu + noise_pu
-        return v_pcc_pu
+        return max(0.0, v_pcc_pu)

@@ -157,6 +157,8 @@ class MLForecastService:
     def __init__(self, model_path="ml/models/forecast_model.joblib"):
         self.model_path = model_path
         self.model = joblib.load(model_path)
+        self.override_hour = None
+        
         
     def generate_forecast(self, twin_state: DigitalTwinState, steps_ahead: int) -> list[dict]:
         timestamp_str = twin_state.timestamp
@@ -175,8 +177,9 @@ class MLForecastService:
         features = []
         for i in range(1, steps_ahead + 1):
             future_dt = current_dt + datetime.timedelta(minutes=5 * i)
+            forecast_hour = self.override_hour if self.override_hour is not None else future_dt.hour
             features.append({
-                "hour": future_dt.hour,
+                "hour": forecast_hour,
                 "minute": future_dt.minute,
                 "day_of_week": future_dt.weekday()
             })
