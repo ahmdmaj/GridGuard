@@ -9,6 +9,7 @@ from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
 from intelligence.forecast.rule import RuleForecastService
 from intelligence.forecast.ml import MLForecastService
+from metrics.provenance import get_provenance
 
 def run_ablation_variant(variant_name, scenario_config, use_baseline=False, forecaster=None, risk_level="median"):
     config = {
@@ -130,5 +131,10 @@ if __name__ == "__main__":
     
     df = pd.DataFrame([res_a0, res_a1, res_a2, res_a3])
     df.to_csv("results/phase2/ablation.csv", index=False)
+    
+    prov = get_provenance(scenario)
+    with open("results/phase2/ablation.provenance.json", "w") as f:
+        json.dump(prov, f, indent=2)
+        
     print("\n--- Ablation Results ---")
     print(df.to_string(index=False))

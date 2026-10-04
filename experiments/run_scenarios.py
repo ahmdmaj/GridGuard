@@ -6,6 +6,7 @@ from physical.feeder import SagEvent
 from intelligence.baseline import BaselineController
 from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
+from metrics.provenance import get_provenance
 
 def generate_rule_forecast(current_time: datetime.datetime, horizon_s: float, step_s: float) -> list:
     """Simple Phase 1 rule-based forecast."""
@@ -195,6 +196,7 @@ def main():
         }
         
         # Save individual
+        results[s_name]["provenance"] = get_provenance(s_config)
         with open(f"results/phase1/{s_name}.json", "w") as f:
             json.dump(results[s_name], f, indent=2)
             
