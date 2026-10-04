@@ -18,6 +18,15 @@ Instead of waiting for the battery to hit a rigid panic threshold (e.g., 20% SOC
 
 By constantly recalculating this horizon, GridGuard proactively sheds lower-tier loads when the future looks bleak, and uses a stateful hysteresis loop to safely cycle the generator—preserving critical fuel reserves while keeping the building alive.
 
+## Project Status
+
+| Feature | Status |
+|---|---|
+| Physical Simulation (Feeder, Loads, Inverter) | **Done and tested** |
+| Energy Survival Horizon (ESH) & Decision Engine | **Done and tested** |
+| Scenario Automation (S1-S8) & Monte Carlo | **Implemented but not yet validated** |
+| ML Forecasting | **Planned** (Pipeline implemented; trained models pending; system currently uses rule-based forecaster) |
+
 ## How to Run
 
 GridGuard includes a comprehensive suite of execution scripts and visualizers. From the root directory, use the following commands to evaluate the system:
@@ -55,6 +64,6 @@ python -m pytest -v
 
 ## Limitations and Risks
 - **Phase 1 Limitations**: The current implementation utilizes a simplified explicit integration step for resolving voltage/power circular dependencies (using the previous step's import power to calculate current voltage). For extreme impedance scenarios, this could introduce minor numerical instability.
-- **Perfect Sensors**: Telemetry currently assumes 100% accurate measurement (aside from explicitly injected noise). Sensor drift and calibration errors are not modeled.
+- **Idealised Sensors**: Telemetry currently assumes 100% accurate measurement (aside from explicitly injected noise). Sensor drift and calibration errors are not modeled.
 - **Rule-based Forecasts**: The current forecasting logic is simple and rule-based. Phase 2 ML integrations will introduce probabilistic forecast errors which the system must be tuned to handle gracefully.
 - **Hardware Limitations**: Battery degradation, thermal derating, and nonlinear efficiency curves are currently omitted to simplify the core ESH logic.

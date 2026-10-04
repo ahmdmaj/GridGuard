@@ -28,6 +28,9 @@ class DecisionEngine:
         # Generator ESH
         self.generator_start_esh_hours = cfg.get("generator_start_esh_hours", 2.0)
         self.generator_stop_esh_hours = cfg.get("generator_stop_esh_hours", 12.0)
+        self.critical_reserve_soc = cfg.get("critical_reserve_soc", 30.0)
+        self.gen_start_delay_hours = cfg.get("gen_start_delay_hours", 0.25)
+        self.gen_start_margin_hours = cfg.get("gen_start_margin_hours", 0.5)
         self.hard_start_soc = cfg.get("hard_start_soc", 20.0)
         self.hysteresis_stop_soc = cfg.get("generator_stop_soc", 80.0)
         
@@ -134,37 +137,39 @@ class DecisionEngine:
             self.current_mode = target_mode
             self.time_in_mode_s = 0.0
             
-        # Generator logic (Shadow Twin)
+        # Load shedding logic (F3: Critical Reserve SOC)
+        # If SOC falls below critical_reserve_soc, shed everything except critical load
+        if soc <= self.critical_reserve_soc:
+            self.connect_flexible = False
+            self.connect_important = False
+        else:
+            if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
+                self.connect_flexible = False
+            elif full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
+                self.connect_flexible = True
+
+            if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
+                self.connect_important = False
+            elif full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
+                self.connect_important = True
+
+        # Generator logic (F3: Start when ESH_island_critical_worst_case <= T_gen_delay + T_margin)
         if not self.generator_requested:
-            if soc <= self.hard_start_soc:
+            # We add a 1% buffer to hard_start_soc to ensure we don't fall below exactly 20.0% due to discrete steps
+            if soc <= (self.hard_start_soc + 1.0):
                 self.generator_requested = True
-            elif shadow_esh.get("critical_only_hours", 100.0) < self.generator_start_esh_hours:
+            elif shadow_esh.get("critical_only_hours", 100.0) <= (self.gen_start_delay_hours + self.gen_start_margin_hours):
                 self.generator_requested = True
         else:
             if soc >= self.hysteresis_stop_soc:
                 self.generator_requested = False
-            elif shadow_esh.get("all_loads_hours", 0.0) > self.generator_stop_esh_hours and soc > self.hard_start_soc:
-                self.generator_requested = False
+            # Remove the short-cycling ESH stop logic that was incorrectly including fuel
                 
         if self.generator_requested:
             self.current_mode = EngineMode.GENERATOR_ASSIST
-            
-        # Load shedding logic
-        if self.connect_flexible:
-            if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
-                self.connect_flexible = False
-        else:
-            if full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
-                self.connect_flexible = True
-
-        if self.connect_important:
-            if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
-                self.connect_important = False
-        else:
-            if full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
-                self.connect_important = True
-                
-        # Map EngineMode to InverterMode and command
+        elif self.current_mode == EngineMode.GENERATOR_ASSIST:
+            # If generator was requested but is now false, and grid is still dead, go back to ISLAND
+            self.current_mode = EngineMode.ISLAND
         if self.current_mode == EngineMode.NORMAL:
             inv_mode = "GRID_PASS"
         elif self.current_mode == EngineMode.SUPPORT:

@@ -23,7 +23,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     
     # 2. Weather Features (Assume forecast is available, but for our dataset we use actuals)
     # In a real system, these would be weather forecasts. 
-    # For training, we use the historical weather as if it was a perfect forecast.
+    # For training, we use the historical weather as if it was an exact forecast.
     # temperature_c, cloud_cover_pct, dni_w_m2 are already in df
     
     # 3. Lag Features (Must be shifted! If we are at t, we predict t+horizon. 

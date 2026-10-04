@@ -72,21 +72,28 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
     
     comms_loss = scenario_config.get("comms_loss", False)
     
+    next_forecast_time = current_time
+    expected_esh = {}
+    shadow_esh = {}
+    
     while current_time < end_time:
-        # Generate telemetry first by stepping with no command? No, telemetry is generated at the end of the previous step.
-        # But we need initial telemetry. We can fake the first step or just use the plant's state.
+        # Update Solar Availability
+        if 8 <= current_time.hour <= 16:
+            solar_factor = 0.2 if scenario_config.get("low_solar", False) else 1.0
+        else:
+            solar_factor = 0.0
+        plant.solar.set_availability(solar_factor)
         
         telemetry = {
             "ts": current_time.isoformat() + "Z",
             "v_rms_pu": plant.v_pcc_pu,
-            "grid_connected": True, # Feeder model always connects grid unless we add a breaker
+            "grid_connected": True,
             "soc": plant.battery.soc,
             "fuel_liters": plant.generator.fuel_liters,
             "gen_available": True
         }
         
         cmd = None
-        # Comms loss logic
         is_comms_healthy = True
         if comms_loss and current_time.hour >= 18 and current_time.hour < 20:
             is_comms_healthy = False
@@ -95,9 +102,11 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
             if use_baseline:
                 cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry)
             else:
-                forecast = generate_rule_forecast(current_time, 12*3600, 300)
-                expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=False)
-                shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=True)
+                if current_time >= next_forecast_time:
+                    forecast = generate_rule_forecast(current_time, 12*3600, 300)
+                    expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=False)
+                    shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=True)
+                    next_forecast_time += datetime.timedelta(seconds=900)
                 cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry, expected_esh, shadow_esh)
         
         # Generator fault injection
@@ -140,15 +149,35 @@ def main():
         "S2_peak_sustained_uv": {
             "bg_peak_kw": 550.0, # Pulls voltage down to ~0.89 for several hours
         },
+        "S3_peak_short_sags": {
+            "bg_peak_kw": 400.0,
+            "sags": [
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=10), "duration_s": 5, "depth": 0.2},
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=15), "duration_s": 30, "depth": 0.2},
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=20), "duration_s": 60, "depth": 0.2}
+            ]
+        },
         "S4_sag_then_outage": {
             "bg_peak_kw": 500.0,
             "sags": [
                 {"start": start_dt + datetime.timedelta(hours=6), "duration_s": 4*3600, "depth": 1.0} # Complete outage at 18:00
             ]
         },
+        "S5_sag_low_solar": {
+            "bg_peak_kw": 550.0,
+            "low_solar": True
+        },
+        "S6_sag_gen_fault": {
+            "bg_peak_kw": 550.0,
+            "gen_fault": True
+        },
         "S7_comms_loss": {
             "bg_peak_kw": 550.0,
             "comms_loss": True
+        },
+        "S8_sensor_noise": {
+            "bg_peak_kw": 550.0,
+            "noise_sigma": 0.05
         }
     }
     

@@ -19,27 +19,27 @@
   ],
   "results": {
     "load_critical_kw": {
-      "q_0.1_pinball_val": 0.1924801824271592,
-      "q_0.1_pinball_test": 0.18527562831537558,
-      "q_0.5_pinball_val": 0.9624009121357958,
-      "q_0.5_pinball_test": 0.9263781415768779,
-      "mae_test": 1.8527562831537558,
-      "q_0.9_pinball_val": 1.7323216418444325,
-      "q_0.9_pinball_test": 1.6674806548383803
+      "q_0.1_pinball_val": 0.035191847299491395,
+      "q_0.1_pinball_test": 0.03832561104737941,
+      "q_0.5_pinball_val": 0.08169016846866198,
+      "q_0.5_pinball_test": 0.08494797627123678,
+      "mae_test": 0.16989595254247356,
+      "q_0.9_pinball_val": 0.036740768370211174,
+      "q_0.9_pinball_test": 0.03687256919643761
     },
     "solar_kw": {
       "q_0.1_pinball_val": 0.24039034972677595,
       "q_0.1_pinball_test": 0.2899805464480874,
-      "q_0.5_pinball_val": 1.20195174863388,
-      "q_0.5_pinball_test": 1.4499027322404372,
-      "mae_test": 2.8998054644808744,
-      "q_0.9_pinball_val": 2.1635131475409835,
-      "q_0.9_pinball_test": 2.609824918032787
+      "q_0.5_pinball_val": 0.05769163313276729,
+      "q_0.5_pinball_test": 0.07837320825678351,
+      "mae_test": 0.15674641651356702,
+      "q_0.9_pinball_val": 0.06975730519352913,
+      "q_0.9_pinball_test": 0.07124021398245219
     },
     "sag_risk": {
-      "brier_score": 0.0,
-      "pr_auc": 0.0,
-      "roc_auc": 0.0
+      "brier_score": 0.02246773024213452,
+      "pr_auc": 0.9861432826193802,
+      "roc_auc": 0.9928568215554855
     }
   },
   "note": "pipeline demonstration; to be retrained on measured feeder data"

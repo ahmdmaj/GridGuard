@@ -17,7 +17,7 @@ class PhysicalPlant:
         self.inverter = InverterSTS(config)
         self.loads = LoadModel(config)
         self.battery = Battery()
-        self.generator = Generator()
+        self.generator = Generator(config)
         self.solar = SolarPV()
         self.pq_node = PowerQualityNode(config)
         self.local_protection = LocalProtection(config)
@@ -86,10 +86,13 @@ class PhysicalPlant:
         self.load_kw = self.loads.get_total_power_kw(self.v_crit_pu)
         self.solar_kw = self.solar.get_generation()
         
+        duration_m = dt_s / 60.0
+        
         if self.generator.is_running:
-            self.gen_kw = self.generator.generate(self.generator.capacity_kw) # Gen always runs at capacity or demand, keep simple
+            requested_kw = max(0.0, self.load_kw - self.solar_kw + charge_limit)
+            self.gen_kw = self.generator.generate(requested_kw, duration_minutes=duration_m)
         else:
-            self.gen_kw = self.generator.generate(0.0)
+            self.gen_kw = self.generator.generate(0.0, duration_minutes=duration_m)
             
         # 7. Energy Balance & Battery
         # The inverter acts as the gateway. 

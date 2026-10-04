@@ -21,7 +21,8 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
         "generator_capacity_kw": 15.0,
         "critical_kw": 4.0,
         "important_kw": 3.0,
-        "non_essential_kw": 2.0
+        "non_essential_kw": 2.0,
+        "watchdog_s": 90.0
     }
     
     plant = PhysicalPlant(config)
@@ -89,6 +90,8 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
         res = plant.step(dt_s, current_time, cmd)
         telem = res["plant_telem"]
         
+        if telem["unserved_kw"] > 0:
+            print(f"[{current_time}] UNSERVED: {telem['unserved_kw']:.2f}kW, SOC={telem['soc']:.1f}%, Gen={telem['sts_state']}, Load={telem['load_critical_kw']:.1f}, Cmd={cmd}")
         metrics["Unmet Critical (kWh)"] += (telem["unserved_kw"] * (dt_s / 3600.0))
         if telem["v_crit_pu"] < 0.94 or telem["v_crit_pu"] > 1.06:
             metrics["V Out-of-band (s)"] += dt_s

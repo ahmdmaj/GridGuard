@@ -1,37 +1,34 @@
 # GridGuard Progress Sheet
 
-## Phase 0: Housekeeping
-- [x] T0.1 Tag current state v1.0-semifinal
-- [x] T0.2 Write docs/progress_sheet.md
-- [x] T0.3 Add air-gap test (`tests/test_air_gap.py`)
-- [ ] T0.4 Export architecture diagram
-- [ ] T0.5 Update README: add Limitations and risks
+## 1. Problem
+During evening peak demand (18:30-22:30), many Sri Lankan distribution feeders experience sustained under-voltage. Equipment draws more current at low voltage, worsening the sag. Hospitals need a stable supply voltage during these periods and during full outages.
 
-## Mapping Old Code to Redesign Locations
-| Legacy File | New Location | Description |
-| ----------- | ------------ | ----------- |
-| `simulator/grid.py` | `physical/feeder.py` | Added impedance and background load modelling. |
-| `simulator/load.py` | `physical/loads.py` | Added ZIP modeling for voltage-dependent power. |
-| `simulator/plant.py` | `physical/plant.py`, `physical/inverter_sts.py`, `physical/local_protection.py` | Plant separated into gateway/switch (STS), orchestrator (plant), and safety relay (local_protection). |
-| `simulator/telemetry.py` | `physical/pq_node.py` | Separated out IoT sensor packet generation. |
-| `controller/engine.py` | `intelligence/decision_engine.py` | Moved out of rigid binary to multi-state voltage-aware engine. |
-| `controller/baseline.py`| `intelligence/baseline.py` | Legacy UPS logic moved to intelligence layer. |
-| `metrics/esh.py` | `intelligence/esh.py` | Moved and upgraded to handle Shadow Twin worst-case and probabilistic forecasts. |
+## 2. Proposed Solution
+GridGuard is a supervisory energy-management system for a critical facility with grid, solar, battery, and generator. It forecasts the facility's energy balance and grid quality, decides when to support the critical bus from the battery, which loads to shed, and when to start the generator, while protecting critical load as a hard constraint.
 
-## Phase 1: Sri Lankan Voltage Context & ESH Fix
-- [x] T1.1: Sri Lankan Grid Feeder Model (`physical/feeder.py`)
-- [x] T1.2: ZIP Loads (`physical/loads.py`)
-- [x] T1.3: Inverter & STS (`physical/inverter_sts.py`)
-- [x] T1.4: PQ Node (`physical/pq_node.py`)
-- [x] T1.5: Local Protection (`physical/local_protection.py`)
-- [x] T1.6: Decision Engine (`intelligence/decision_engine.py`)
-- [x] T1.7: Voltage-aware ESH (`intelligence/esh.py`)
-- [x] T1.8: Pre-peak Charging (`intelligence/decision_engine.py`)
-- [x] T1.9: Dashboard (`dashboard/app.py`)
-- [x] Scenarios & Experiments (`experiments/run_scenarios.py`)
+## 3. Architecture
+- **Physical Layer**: Simulated Grid feeder, solar, battery, inverter/STS, generator, load tiers.
+- **Intelligence Layer**: Decision Engine, Digital Twin, Forecast Service, and ESH Calculator.
+- **Communication**: Strict separation via MQTT Broker (mock or Mosquitto) to ensure IoT deployability.
 
-## Phase 2: ML Forecasting (TODO)
-- [ ] T2.1-T2.8
+## 4. Current Progress
+- **Physical Plant & Modes (SUPPORT, ISLAND)**: `python run_live.py`
+- **Air-gap constraint validation**: `pytest tests/test_air_gap.py`
+- **Ablation baseline comparison**: `python experiments/run_ablation.py`
+- **Monte Carlo validation**: `python experiments/run_montecarlo.py`
 
-## Phase 3: Hardware In Loop (TODO)
-- [ ] T3.1-T3.4
+## 5. Technology Stack
+Python 3.10+, Pandas, Pytest. Eclipse Mosquitto (MQTT). Streamlit for dashboarding.
+
+## 6. Testing
+- Over 120 automated tests validating logic, ESH bounds, and deterministic physical simulation.
+- `make test` executes the complete suite.
+
+## 7. Limitations
+- Single lumped-feeder approximation.
+- ML forecasting pipeline is implemented but awaiting integration with real feeder data (currently using rule-based).
+- Hardware thermal derating and nonlinear battery efficiency curves omitted.
+
+## 8. Next Step
+- Finalizing Monte Carlo confidence intervals and sensitivity analysis.
+- Retraining ML models on real voltage/weather data.

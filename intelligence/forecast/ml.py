@@ -38,7 +38,7 @@ class MLForecastService(ForecastService):
             feat = {
                 "hour_sin": np.sin(t.hour * (2. * np.pi / 24)),
                 "hour_cos": np.cos(t.hour * (2. * np.pi / 24)),
-                "day_of_week": t.dayofweek,
+                "day_of_week": t.weekday(),
                 "is_peak_window": 1 if 18 <= t.hour <= 22 else 0,
                 "temperature_c": 30.0, # Dummy forecast
                 "cloud_cover_pct": 50.0,
