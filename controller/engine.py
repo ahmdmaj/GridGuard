@@ -3,7 +3,12 @@ from simulator.constants import OperatingMode
 from controller.command import SystemCommand
 
 class DecisionEngine:
-    def __init__(self) -> None:
+    def __init__(self, config: dict = None) -> None:
+        cfg = config or {}
+        self.generator_capacity_kw = cfg.get("generator_capacity_kw", 15.0)
+        self.hysteresis_start_soc = cfg.get("generator_start_soc", 30.0)
+        self.hysteresis_stop_soc = cfg.get("generator_stop_soc", 80.0)
+        
         self.current_mode: OperatingMode = OperatingMode.NORMAL
         self.generator_requested: bool = False
 
@@ -24,9 +29,9 @@ class DecisionEngine:
         else:
             # Step 2: Grid Failed - Generator Hysteresis
             soc = twin_state["battery_state"]["soc"]
-            if soc <= 30.0 and not self.generator_requested:
+            if soc <= self.hysteresis_start_soc and not self.generator_requested:
                 self.generator_requested = True
-            elif soc >= 80.0 and self.generator_requested:
+            elif soc >= self.hysteresis_stop_soc and self.generator_requested:
                 self.generator_requested = False
 
             # Step 3: Grid Failed - Load Shedding via ESH
@@ -57,7 +62,13 @@ class DecisionEngine:
                 active_load_kw += twin_state["load_state"]["flexible_kw"]
 
             deficit_kw = active_load_kw - twin_state["solar_state"]["generation_kw"]
-            battery_command_kw = deficit_kw
+            
+            if self.generator_requested:
+                # Generator is ON: Generator covers the load, remaining capacity charges the battery
+                battery_command_kw = deficit_kw - self.generator_capacity_kw
+            else:
+                # Generator is OFF: Battery covers the net deficit (or charges from surplus solar)
+                battery_command_kw = deficit_kw
 
             # Step 5: Return command
             return {
