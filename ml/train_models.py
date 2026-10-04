@@ -4,13 +4,8 @@ import os
 import joblib
 import json
 
-try:
-    from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
-    from sklearn.metrics import mean_absolute_error, brier_score_loss, roc_auc_score, average_precision_score
-    SKLEARN_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: sklearn failed to import due to {e}. Mocking models for pipeline demonstration.")
-    SKLEARN_AVAILABLE = False
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
+from sklearn.metrics import mean_absolute_error, brier_score_loss, roc_auc_score, average_precision_score
 
 from ml.features import engineer_features
 
@@ -18,20 +13,6 @@ def pinball_loss(y_true, y_pred, alpha):
     err = y_true - y_pred
     return np.mean(np.maximum(alpha * err, (alpha - 1) * err))
 
-class MockModel:
-    def __init__(self, target_type="load"):
-        self.target_type = target_type
-        
-    def fit(self, X, y):
-        pass
-        
-    def predict(self, X):
-        if self.target_type == "load":
-            return np.full(len(X), 4.0)
-        return np.full(len(X), 0.0)
-        
-    def predict_proba(self, X):
-        return np.zeros((len(X), 2))
 
 
 def train_and_evaluate():
@@ -75,10 +56,7 @@ def train_and_evaluate():
         
         for q in quantiles:
             print(f"Training {target} model for quantile {q}...")
-            if SKLEARN_AVAILABLE:
-                model = GradientBoostingRegressor(loss='quantile', alpha=q, n_estimators=50, max_depth=3, random_state=42)
-            else:
-                model = MockModel(target_type=target)
+            model = GradientBoostingRegressor(loss='quantile', alpha=q, n_estimators=50, max_depth=3, random_state=42)
             model.fit(X_train, y_train)
             
             # Predict
@@ -95,10 +73,7 @@ def train_and_evaluate():
             models[str(q)] = model
             
             if q == 0.5:
-                if SKLEARN_AVAILABLE:
-                    target_results["mae_test"] = float(mean_absolute_error(y_test, pred_test))
-                else:
-                    target_results["mae_test"] = float(np.mean(np.abs(y_test - pred_test)))
+                target_results["mae_test"] = float(mean_absolute_error(y_test, pred_test))
                 
         results[target] = target_results
         joblib.dump(models, f"models/{target}_quantiles.joblib")
@@ -123,26 +98,16 @@ def train_and_evaluate():
     y_test_sag = test_df[target_sag]
     
     print("Training Sag Risk Classifier...")
-    if SKLEARN_AVAILABLE:
-        sag_model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
-    else:
-        sag_model = MockModel(target_type="sag")
+    sag_model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
     sag_model.fit(X_train_sag, y_train_sag)
     
     prob_test = sag_model.predict_proba(X_test_sag)[:, 1]
     
-    if SKLEARN_AVAILABLE:
-        results["sag_risk"] = {
-            "brier_score": float(brier_score_loss(y_test_sag, prob_test)),
-            "pr_auc": float(average_precision_score(y_test_sag, prob_test)),
-            "roc_auc": float(roc_auc_score(y_test_sag, prob_test))
-        }
-    else:
-        results["sag_risk"] = {
-            "brier_score": 0.0,
-            "pr_auc": 0.0,
-            "roc_auc": 0.0
-        }
+    results["sag_risk"] = {
+        "brier_score": float(brier_score_loss(y_test_sag, prob_test)),
+        "pr_auc": float(average_precision_score(y_test_sag, prob_test)),
+        "roc_auc": float(roc_auc_score(y_test_sag, prob_test))
+    }
     
     joblib.dump(sag_model, "models/sag_risk.joblib")
     
@@ -150,6 +115,7 @@ def train_and_evaluate():
     metadata = {
         "features": feature_cols,
         "results": results,
+        "is_mock": False,
         "note": "pipeline demonstration; to be retrained on measured feeder data"
     }
     

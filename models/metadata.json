@@ -42,5 +42,6 @@
       "roc_auc": 0.9928568215554855
     }
   },
+  "is_mock": false,
   "note": "pipeline demonstration; to be retrained on measured feeder data"
 }
