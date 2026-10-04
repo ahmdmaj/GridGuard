@@ -1,1 +1,0 @@
-# GridGuard Entry Point
