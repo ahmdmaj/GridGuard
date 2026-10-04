@@ -30,6 +30,8 @@ from metrics.esh import ESHCalculator
 # Shared fixture helpers
 # ---------------------------------------------------------------------------
 
+from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
+
 def base_state(
     soc: float = 0.0,
     solar_kw: float = 0.0,
@@ -38,18 +40,15 @@ def base_state(
     flex_kw: float = 0.0,
     fuel_liters: float = 0.0,
     gen_available: bool = False,
-) -> dict:
-    """Build a minimal twin_state dict with explicit defaults for every field."""
-    return {
-        "solar_state":     {"generation_kw": solar_kw},
-        "battery_state":   {"soc": soc},
-        "generator_state": {"fuel_liters": fuel_liters, "is_available": gen_available},
-        "load_state":      {
-            "critical_kw":  crit_kw,
-            "important_kw": imp_kw,
-            "flexible_kw":  flex_kw,
-        },
-    }
+) -> DigitalTwinState:
+    """Build a minimal DigitalTwinState object with explicit defaults for every field."""
+    return DigitalTwinState(
+        grid=GridState(),
+        solar=SolarState(power_kw=solar_kw),
+        battery=BatteryState(soc=soc),
+        generator=GeneratorState(fuel_liters=fuel_liters, is_available=gen_available),
+        loads=LoadState(critical_kw=crit_kw, important_kw=imp_kw, flexible_kw=flex_kw)
+    )
 
 
 def flat_forecast(

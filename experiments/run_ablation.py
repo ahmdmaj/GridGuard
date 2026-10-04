@@ -6,7 +6,8 @@ from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
 from intelligence.baseline import BaselineController, BaselineHysteresisController
 from intelligence.decision_engine import DecisionEngine
-from intelligence.esh import ESHCalculator
+from metrics.esh import ESHCalculator
+from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
 from intelligence.forecast.rule import RuleForecastService
 from intelligence.forecast.ml import MLForecastService
 from metrics.provenance import get_provenance
@@ -84,11 +85,22 @@ def run_ablation_variant(variant_name, scenario_config, controller_type="GG", fo
                 forecast_list.append({
                     "solar_kw": float(fb.solar_kw[solar_key][i]),
                     "load_critical_kw": float(fb.load_kw[load_key][i]),
+                    "load_important_kw": 3.0,
+                    "load_flexible_kw": 2.0,
                     "grid_ok_prob": float(fb.grid_ok_prob[i])
                 })
                 
-            expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast_list, assume_island=False)
-            shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast_list, assume_island=True)
+            twin_state = DigitalTwinState(
+                timestamp=telemetry["ts"],
+                grid=GridState(voltage_pu=telemetry["v_rms_pu"], is_available=telemetry["grid_connected"]),
+                solar=SolarState(power_kw=plant.solar.power_kw if hasattr(plant.solar, 'power_kw') else 0.0),
+                battery=BatteryState(soc=telemetry["soc"]),
+                generator=GeneratorState(fuel_liters=telemetry["fuel_liters"], is_available=telemetry["gen_available"]),
+                loads=LoadState(critical_kw=4.0, important_kw=3.0, flexible_kw=2.0)
+            )
+                
+            expected_esh = esh_calc.calculate_forecast_esh(twin_state, forecast_list, assume_island=False)
+            shadow_esh = esh_calc.calculate_forecast_esh(twin_state, forecast_list, assume_island=True)
             cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry, expected_esh, shadow_esh)
 
         res = plant.step(dt_s, current_time, cmd)

@@ -1,13 +1,14 @@
 import pytest
 from controller.engine import DecisionEngine
 from simulator.constants import OperatingMode
+from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
 
 def test_decision_engine_grid_normal() -> None:
     engine = DecisionEngine()
-    twin_state = {
-        "grid_state": {"is_available": True},
-        "battery_state": {"soc": 100.0}
-    }
+    twin_state = DigitalTwinState(
+        grid=GridState(is_available=True),
+        battery=BatteryState(soc=100.0)
+    )
     esh: dict = {}
     
     command = engine.evaluate(twin_state, esh, esh)
@@ -18,10 +19,10 @@ def test_decision_engine_grid_normal() -> None:
 
 def test_decision_engine_grid_normal_charges_battery() -> None:
     engine = DecisionEngine()
-    twin_state = {
-        "grid_state": {"is_available": True},
-        "battery_state": {"soc": 50.0}
-    }
+    twin_state = DigitalTwinState(
+        grid=GridState(is_available=True),
+        battery=BatteryState(soc=50.0)
+    )
     esh: dict = {}
     
     command = engine.evaluate(twin_state, esh, esh)
@@ -31,17 +32,13 @@ def test_decision_engine_grid_normal_charges_battery() -> None:
     assert command["generator_run"] is False
     assert "Charging battery" in command["decision_reason"]
 
-def get_mock_failed_state(soc: float = 50.0) -> dict:
-    return {
-        "grid_state": {"is_available": False},
-        "battery_state": {"soc": soc},
-        "solar_state": {"generation_kw": 0.0},
-        "load_state": {
-            "critical_kw": 0.0,
-            "important_kw": 0.0,
-            "flexible_kw": 0.0
-        }
-    }
+def get_mock_failed_state(soc: float = 50.0) -> DigitalTwinState:
+    return DigitalTwinState(
+        grid=GridState(is_available=False),
+        battery=BatteryState(soc=soc),
+        solar=SolarState(power_kw=0.0),
+        loads=LoadState(critical_kw=0.0, important_kw=0.0, flexible_kw=0.0)
+    )
 
 def test_decision_engine_grid_failed() -> None:
     engine = DecisionEngine()
@@ -177,7 +174,7 @@ def test_grid_restore_reconnects_all_loads() -> None:
     assert command["connect_important"] is False
     
     # Grid restores
-    twin_state["grid_state"]["is_available"] = True
+    twin_state.grid.is_available = True
     command = engine.evaluate(twin_state, esh, esh) # ESH doesn't matter now
     assert command["connect_flexible"] is True
     assert command["connect_important"] is True
@@ -185,10 +182,10 @@ def test_grid_restore_reconnects_all_loads() -> None:
 def test_battery_command_generator_off_covers_deficit() -> None:
     engine = DecisionEngine()
     twin_state = get_mock_failed_state(soc=50.0)
-    twin_state["solar_state"]["generation_kw"] = 2.0
-    twin_state["load_state"]["critical_kw"] = 4.0
-    twin_state["load_state"]["important_kw"] = 4.0
-    twin_state["load_state"]["flexible_kw"] = 0.0
+    twin_state.solar.power_kw = 2.0
+    twin_state.loads.critical_kw = 4.0
+    twin_state.loads.important_kw = 4.0
+    twin_state.loads.flexible_kw = 0.0
     
     esh = {"all_loads_hours": 3.0, "critical_and_important_hours": 2.5, "critical_only_hours": 5.0}
     command = engine.evaluate(twin_state, esh, esh)
@@ -196,17 +193,17 @@ def test_battery_command_generator_off_covers_deficit() -> None:
     assert command["generator_run"] is False
     assert command["battery_command_kw"] == 6.0
     
-    twin_state["solar_state"]["generation_kw"] = 10.0
+    twin_state.solar.power_kw = 10.0
     command = engine.evaluate(twin_state, esh, esh)
     assert command["battery_command_kw"] == -2.0
 
 def test_battery_command_generator_on_covers_deficit_and_charges() -> None:
     engine = DecisionEngine()
     twin_state = get_mock_failed_state(soc=10.0)
-    twin_state["solar_state"]["generation_kw"] = 0.0
-    twin_state["load_state"]["critical_kw"] = 10.0
-    twin_state["load_state"]["important_kw"] = 0.0
-    twin_state["load_state"]["flexible_kw"] = 0.0
+    twin_state.solar.power_kw = 0.0
+    twin_state.loads.critical_kw = 10.0
+    twin_state.loads.important_kw = 0.0
+    twin_state.loads.flexible_kw = 0.0
     
     esh = {"all_loads_hours": 5.0, "critical_and_important_hours": 5.0, "critical_only_hours": 5.0}
     command = engine.evaluate(twin_state, esh, esh)
@@ -217,10 +214,10 @@ def test_battery_command_generator_on_covers_deficit_and_charges() -> None:
 def test_battery_command_generator_on_load_exceeds_gen() -> None:
     engine = DecisionEngine()
     twin_state = get_mock_failed_state(soc=10.0)
-    twin_state["solar_state"]["generation_kw"] = 0.0
-    twin_state["load_state"]["critical_kw"] = 20.0
-    twin_state["load_state"]["important_kw"] = 0.0
-    twin_state["load_state"]["flexible_kw"] = 0.0
+    twin_state.solar.power_kw = 0.0
+    twin_state.loads.critical_kw = 20.0
+    twin_state.loads.important_kw = 0.0
+    twin_state.loads.flexible_kw = 0.0
     
     esh = {"all_loads_hours": 5.0, "critical_and_important_hours": 5.0, "critical_only_hours": 5.0}
     command = engine.evaluate(twin_state, esh, esh)
@@ -244,16 +241,16 @@ def test_engine_config_overrides() -> None:
     assert command["generator_run"] is True
     
     # Test custom generator capacity
-    twin_state["load_state"]["critical_kw"] = 10.0
+    twin_state.loads.critical_kw = 10.0
     command = engine.evaluate(twin_state, esh, esh)
     # active_load = 10.0, deficit = 10.0
     # battery_command = deficit - 20.0 = -10.0 (Charge at 10kW)
     assert command["battery_command_kw"] == -10.0
 
     # Test custom target SOC
-    twin_state_grid = {
-        "grid_state": {"is_available": True},
-        "battery_state": {"soc": 95.0} # Above custom target 90.0
-    }
+    twin_state_grid = DigitalTwinState(
+        grid=GridState(is_available=True),
+        battery=BatteryState(soc=95.0) # Above custom target 90.0
+    )
     command_grid = engine.evaluate(twin_state_grid, esh, esh)
     assert command_grid["battery_command_kw"] == 0.0

@@ -11,7 +11,7 @@ def test_plant_to_twin_integration() -> None:
     telemetry = runner.run_step()
     twin.update(telemetry)
     
-    assert twin.get_current_state()["grid_state"]["is_available"] is True
+    assert twin.get_current_state().grid.is_available is True
     
     # Step 3: Introduce a Physical Fault
     runner.plant.grid.fail()
@@ -19,7 +19,7 @@ def test_plant_to_twin_integration() -> None:
     twin.update(telemetry)
     
     # Step 4: Verify Twin Event Detection
-    assert twin.get_current_state()["grid_state"]["is_available"] is False
+    assert twin.get_current_state().grid.is_available is False
     assert len(twin.events) > 0
     assert twin.events[-1]["event"] == TwinEvent.GRID_FAILURE
     
@@ -29,6 +29,6 @@ def test_plant_to_twin_integration() -> None:
     twin.update(telemetry)
     
     # Step 6: Verify Twin Recovery Detection
-    assert twin.get_current_state()["grid_state"]["is_available"] is True
+    assert twin.get_current_state().grid.is_available is True
     assert len(twin.events) > 0
     assert twin.events[-1]["event"] == TwinEvent.GRID_RESTORED

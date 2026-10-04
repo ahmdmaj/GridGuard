@@ -32,11 +32,11 @@ class DecisionEngine:
         self.connect_important: bool = True
         self.connect_critical: bool = True
 
-    def evaluate(self, twin_state: Dict[str, Any], full_esh: Dict[str, float], battery_only_esh: Dict[str, float] = None) -> SystemCommand:
+    def evaluate(self, twin_state: 'DigitalTwinState', full_esh: Dict[str, float], battery_only_esh: Dict[str, float] = None) -> SystemCommand:
         if battery_only_esh is None:
             battery_only_esh = full_esh
 
-        is_grid_available = twin_state["grid_state"]["is_available"]
+        is_grid_available = twin_state.grid.is_available
 
         if is_grid_available:
             self.current_mode = OperatingMode.NORMAL
@@ -45,7 +45,7 @@ class DecisionEngine:
             self.connect_important = True
             self.connect_critical = True
             
-            soc = twin_state["battery_state"]["soc"]
+            soc = twin_state.battery.soc
             if soc < self.target_soc:
                 battery_command_kw = -self.max_charge_command_kw
                 reason = f"Grid is available. Charging battery to target SOC ({self.target_soc}%)."
@@ -63,7 +63,7 @@ class DecisionEngine:
             }
         else:
             # Step 2: Grid Failed - Generator Smart Dispatch (Phase D)
-            soc = twin_state["battery_state"]["soc"]
+            soc = twin_state.battery.soc
             
             # Start logic
             if not self.generator_requested:
@@ -110,13 +110,13 @@ class DecisionEngine:
             # Step 4: Grid Failed - Source Management
             active_load_kw = 0.0
             if self.connect_critical:
-                active_load_kw += twin_state["load_state"]["critical_kw"]
+                active_load_kw += twin_state.loads.critical_kw
             if self.connect_important:
-                active_load_kw += twin_state["load_state"]["important_kw"]
+                active_load_kw += twin_state.loads.important_kw
             if self.connect_flexible:
-                active_load_kw += twin_state["load_state"]["flexible_kw"]
+                active_load_kw += twin_state.loads.flexible_kw
 
-            deficit_kw = active_load_kw - twin_state["solar_state"]["generation_kw"]
+            deficit_kw = active_load_kw - twin_state.solar.power_kw
             
             if self.generator_requested:
                 battery_command_kw = deficit_kw - self.generator_capacity_kw

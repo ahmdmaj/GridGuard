@@ -10,7 +10,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
 from intelligence.decision_engine import DecisionEngine
-from intelligence.esh import ESHCalculator
+from metrics.esh import ESHCalculator
+from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
 from experiments.run_scenarios import generate_rule_forecast
 
 st.set_page_config(page_title="GridGuard V2 Dashboard", layout="wide")
@@ -80,8 +81,18 @@ while current_time < end_time:
     cmd = None
     if is_comms_healthy:
         forecast = generate_rule_forecast(current_time, 12*3600, 300)
-        expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=False)
-        shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=True)
+        
+        twin_state = DigitalTwinState(
+            timestamp=telemetry["ts"],
+            grid=GridState(voltage_pu=telemetry["v_rms_pu"], is_available=telemetry["grid_connected"]),
+            solar=SolarState(power_kw=plant.solar.power_kw if hasattr(plant.solar, 'power_kw') else 0.0),
+            battery=BatteryState(soc=telemetry["soc"]),
+            generator=GeneratorState(fuel_liters=telemetry["fuel_liters"], is_available=telemetry["gen_available"]),
+            loads=LoadState(critical_kw=4.0, important_kw=3.0, flexible_kw=2.0)
+        )
+        
+        expected_esh = esh_calc.calculate_forecast_esh(twin_state, forecast, assume_island=False)
+        shadow_esh = esh_calc.calculate_forecast_esh(twin_state, forecast, assume_island=True)
         cmd = controller.evaluate(dt_s, (current_time - start_dt).total_seconds(), telemetry, expected_esh, shadow_esh)
     else:
         expected_esh = {"critical_only_hours": 0}

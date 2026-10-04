@@ -58,7 +58,7 @@ class CloudControllerNode:
         full_esh = self.esh_calc.calculate_forecast_esh(twin_state, fc)
         
         twin_no_gen = copy.deepcopy(twin_state)
-        twin_no_gen["generator_state"]["is_available"] = False
+        twin_no_gen.generator.is_available = False
         battery_only_esh = self.esh_calc.calculate_forecast_esh(twin_no_gen, fc)
         
         cmd = self.controller.evaluate(twin_state, full_esh, battery_only_esh)

@@ -1,5 +1,5 @@
 {
-  "git_commit": "765538eae478cf88011f67e0824996a618a30c1d",
+  "git_commit": "ae8c4cf93ed51d86624dff55b060f0937b72f0bf",
   "git_dirty": true,
   "config": {
     "bg_peak_kw": 500.0,
@@ -15,5 +15,5 @@
   "seed": null,
   "python_version": "3.14.5",
   "sklearn_version": "1.9.1",
-  "generated_at": "2026-10-04T11:24:29.306918+00:00"
+  "generated_at": "2026-10-04T13:22:57.320386+00:00"
 }
