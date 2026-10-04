@@ -1,4 +1,5 @@
 import json
+import copy
 from typing import Optional, Dict, Any
 from telemetry.broker import MockMQTTBroker, TOPIC_TELEMETRY, TOPIC_COMMAND
 from simulator.runner import SimulationRunner
@@ -50,7 +51,15 @@ class CloudControllerNode:
     def _on_telemetry_received(self, payload_str: str) -> None:
         telemetry = json.loads(payload_str)
         self.twin.update(telemetry)
+        
+        twin_state = self.twin.get_current_state()
         fc = self.forecast_service.generate_forecast(telemetry, 12)
-        esh = self.esh_calc.calculate_forecast_esh(self.twin.get_current_state(), fc)
-        cmd = self.controller.evaluate(self.twin.get_current_state(), esh)
+        
+        full_esh = self.esh_calc.calculate_forecast_esh(twin_state, fc)
+        
+        twin_no_gen = copy.deepcopy(twin_state)
+        twin_no_gen["generator_state"]["is_available"] = False
+        battery_only_esh = self.esh_calc.calculate_forecast_esh(twin_no_gen, fc)
+        
+        cmd = self.controller.evaluate(twin_state, full_esh, battery_only_esh)
         self.broker.publish(TOPIC_COMMAND, cmd)

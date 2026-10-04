@@ -1,4 +1,5 @@
 import json
+import copy
 from typing import Tuple, Dict, Any, List
 from simulator.runner import SimulationRunner
 from simulator.constants import LoadCategory
@@ -45,15 +46,21 @@ class ExperimentRunner:
             # C. Intelligence (GridGuard only)
             if controller_type == "gridguard":
                 fc = forecast_service.generate_forecast(current_telemetry, 12)
-                esh = esh_calc.calculate_forecast_esh(twin.get_current_state(), fc)
+                twin_state = twin.get_current_state()
+                full_esh = esh_calc.calculate_forecast_esh(twin_state, fc)
+                
+                twin_no_gen = copy.deepcopy(twin_state)
+                twin_no_gen["generator_state"]["is_available"] = False
+                battery_only_esh = esh_calc.calculate_forecast_esh(twin_no_gen, fc)
             else:
-                esh = {}
+                full_esh = {}
+                battery_only_esh = {}
 
             # D. Controller Command
             if controller_type == "baseline":
                 cmd = controller.evaluate(twin.get_current_state())
             elif controller_type == "gridguard":
-                cmd = controller.evaluate(twin.get_current_state(), esh)
+                cmd = controller.evaluate(twin.get_current_state(), full_esh, battery_only_esh)
 
             # E. Actuate Physical Plant
             runner.plant.load.set_connection(LoadCategory.CRITICAL, cmd["connect_critical"])
