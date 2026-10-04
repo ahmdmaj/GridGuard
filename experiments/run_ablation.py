@@ -4,14 +4,14 @@ import json
 
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
-from intelligence.baseline import BaselineHysteresisController
+from intelligence.baseline import BaselineController, BaselineHysteresisController
 from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
 from intelligence.forecast.rule import RuleForecastService
 from intelligence.forecast.ml import MLForecastService
 from metrics.provenance import get_provenance
 
-def run_ablation_variant(variant_name, scenario_config, use_baseline=False, forecaster=None, risk_level="median"):
+def run_ablation_variant(variant_name, scenario_config, controller_type="GG", forecaster=None, risk_level="median"):
     config = {
         "z_pu": 0.1,
         "p_feeder_rating_kw": 500.0,
@@ -30,7 +30,9 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
     for sag in scenario_config.get("sags", []):
         plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
         
-    if use_baseline:
+    if controller_type == "A0":
+        controller = BaselineController()
+    elif controller_type == "B1":
         controller = BaselineHysteresisController()
     else:
         controller = DecisionEngine(config)
@@ -45,7 +47,8 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
         "Unmet Critical (kWh)": 0.0,
         "Fuel Used (L)": 0.0,
         "V Out-of-band (s)": 0.0,
-        "Transfers": 0
+        "Transfers": 0,
+        "SOC at 18:30": 0.0
     }
     
     last_sts_state = "GRID_PASS"
@@ -66,7 +69,7 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
             telemetry_history.pop(0)
             
         cmd = None
-        if use_baseline:
+        if controller_type in ["A0", "B1"]:
             cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry)
         else:
             fb = forecaster.forecast(telemetry_history, current_time, 12*3600)
@@ -101,6 +104,9 @@ def run_ablation_variant(variant_name, scenario_config, use_baseline=False, fore
             metrics["Transfers"] += 1
             last_sts_state = telem["sts_state"]
             
+        if current_time.hour == 18 and current_time.minute == 30 and current_time.second < dt_s:
+            metrics["SOC at 18:30"] = telem["soc"]
+            
         current_time += datetime.timedelta(seconds=dt_s)
         
     metrics["Fuel Used (L)"] = initial_fuel - plant.generator.fuel_liters
@@ -120,16 +126,18 @@ if __name__ == "__main__":
     rule_forecaster = RuleForecastService()
     ml_forecaster = MLForecastService()
     
-    res_a0 = run_ablation_variant("A0: Baseline", scenario, use_baseline=True)
+    res_a0 = run_ablation_variant("A0: Baseline", scenario, controller_type="A0")
     print("Finished A0")
-    res_a1 = run_ablation_variant("A1: GG Rule Median", scenario, use_baseline=False, forecaster=rule_forecaster, risk_level="median")
+    res_b1 = run_ablation_variant("B1: Baseline Hysteresis", scenario, controller_type="B1")
+    print("Finished B1")
+    res_a1 = run_ablation_variant("A1: GG Rule Median", scenario, controller_type="GG", forecaster=rule_forecaster, risk_level="median")
     print("Finished A1")
-    res_a2 = run_ablation_variant("A2: GG ML Median", scenario, use_baseline=False, forecaster=ml_forecaster, risk_level="median")
+    res_a2 = run_ablation_variant("A2: GG ML Median", scenario, controller_type="GG", forecaster=ml_forecaster, risk_level="median")
     print("Finished A2")
-    res_a3 = run_ablation_variant("A3: GG ML Pessimistic", scenario, use_baseline=False, forecaster=ml_forecaster, risk_level="pessimistic")
+    res_a3 = run_ablation_variant("A3: GG ML Pessimistic", scenario, controller_type="GG", forecaster=ml_forecaster, risk_level="pessimistic")
     print("Finished A3")
     
-    df = pd.DataFrame([res_a0, res_a1, res_a2, res_a3])
+    df = pd.DataFrame([res_a0, res_b1, res_a1, res_a2, res_a3])
     df.to_csv("results/phase2/ablation.csv", index=False)
     
     prov = get_provenance(scenario)

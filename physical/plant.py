@@ -131,8 +131,11 @@ class PhysicalPlant:
                     self.last_p_site_kw = net_demand + abs(self.batt_kw)
                 else:
                     # GRID_PASS
-                    self.batt_kw = 0.0
-                    self.last_p_site_kw = net_demand
+                    if command and "charge_limit_kw" in command:
+                        self.batt_kw = -self.battery.charge(charge_limit, duration_minutes=duration_m)
+                    else:
+                        self.batt_kw = 0.0
+                    self.last_p_site_kw = net_demand + abs(self.batt_kw)
                     
         # Update battery step time (the battery in simulator uses SIMULATION_TIMESTEP_MINUTES globally, but we should just let it run)
         # Actually simulator.battery assumes 5 min steps when we call discharge/charge

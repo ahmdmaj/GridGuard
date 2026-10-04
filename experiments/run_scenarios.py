@@ -3,7 +3,7 @@ import json
 import os
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
-from intelligence.baseline import BaselineHysteresisController
+from intelligence.baseline import BaselineController, BaselineHysteresisController
 from intelligence.decision_engine import DecisionEngine
 from intelligence.esh import ESHCalculator
 from metrics.provenance import get_provenance
@@ -28,7 +28,7 @@ def generate_rule_forecast(current_time: datetime.datetime, horizon_s: float, st
         t += datetime.timedelta(seconds=step_s)
     return forecast
 
-def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) -> dict:
+def run_simulation(scenario_id: str, scenario_config: dict, controller_type: str) -> dict:
     config = {
         "z_pu": 0.1,
         "p_feeder_rating_kw": 500.0,
@@ -48,7 +48,9 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
     for sag in scenario_config.get("sags", []):
         plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
         
-    if use_baseline:
+    if controller_type == "A0":
+        controller = BaselineController()
+    elif controller_type == "B1":
         controller = BaselineHysteresisController()
     else:
         controller = DecisionEngine(config)
@@ -65,7 +67,8 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
         "transfers": 0,
         "total_dropout_ms": 0.0,
         "time_in_support_or_island_s": 0.0,
-        "peak_grid_import_kw": 0.0
+        "peak_grid_import_kw": 0.0,
+        "soc_at_1830": 0.0
     }
     
     last_sts_state = "GRID_PASS"
@@ -76,6 +79,8 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
     next_forecast_time = current_time
     expected_esh = {}
     shadow_esh = {}
+    
+    trace_rows = []
     
     while current_time < end_time:
         # Update Solar Availability
@@ -100,7 +105,7 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
             is_comms_healthy = False
             
         if is_comms_healthy:
-            if use_baseline:
+            if controller_type in ["A0", "B1"]:
                 cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry)
             else:
                 if current_time >= next_forecast_time:
@@ -135,9 +140,30 @@ def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) 
         if plant.last_p_site_kw > metrics["peak_grid_import_kw"]:
             metrics["peak_grid_import_kw"] = plant.last_p_site_kw
             
+        if current_time.hour == 18 and current_time.minute == 30 and current_time.second < dt_s:
+            metrics["soc_at_1830"] = telem["soc"]
+            
+        trace_row = {
+            "time": telem["ts"],
+            "mode": telem["sts_state"],
+            "soc": telem["soc"],
+            "shadow_esh": shadow_esh.get("critical_only_hours", 0.0) if shadow_esh else 0.0,
+            "thresholds": cmd.get("reason", "") if cmd else "",
+            "pre_peak": 1 if (16 <= current_time.hour < 18) else 0
+        }
+        trace_rows.append(trace_row)
+            
         current_time += datetime.timedelta(seconds=dt_s)
         
     metrics["generator_fuel_l_used"] = initial_fuel - plant.generator.fuel_liters
+    
+    # write trace
+    import csv
+    os.makedirs("results/phase1", exist_ok=True)
+    with open(f"results/phase1/{scenario_id}_{controller_type}_trace.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["time", "mode", "soc", "shadow_esh", "thresholds", "pre_peak"])
+        writer.writeheader()
+        writer.writerows(trace_rows)
     
     return metrics
 
@@ -185,13 +211,16 @@ def main():
     results = {}
     
     for s_name, s_config in scenarios.items():
-        print(f"Running {s_name} with Baseline...")
-        base_metrics = run_simulation(s_name, s_config, use_baseline=True)
+        print(f"Running {s_name} with A0...")
+        a0_metrics = run_simulation(s_name, s_config, controller_type="A0")
+        print(f"Running {s_name} with B1...")
+        b1_metrics = run_simulation(s_name, s_config, controller_type="B1")
         print(f"Running {s_name} with GridGuard...")
-        gg_metrics = run_simulation(s_name, s_config, use_baseline=False)
+        gg_metrics = run_simulation(s_name, s_config, controller_type="GG")
         
         results[s_name] = {
-            "baseline": base_metrics,
+            "A0": a0_metrics,
+            "B1": b1_metrics,
             "gridguard": gg_metrics
         }
         
@@ -203,13 +232,15 @@ def main():
     # Print summary
     print("\n--- PHASE 1 EXPERIMENT SUMMARY ---")
     for s_name, data in results.items():
-        base = data["baseline"]
+        a0 = data["A0"]
+        b1 = data["B1"]
         gg = data["gridguard"]
         print(f"\nScenario: {s_name}")
-        print(f"  Critical V out-of-band: Baseline = {base['time_v_crit_out_of_band_s']}s, GridGuard = {gg['time_v_crit_out_of_band_s']}s")
-        print(f"  Unmet critical load: Baseline = {base['unmet_critical_kwh']:.3f}kWh, GridGuard = {gg['unmet_critical_kwh']:.3f}kWh")
-        print(f"  Transfers: Baseline = {base['transfers']}, GridGuard = {gg['transfers']}")
-        print(f"  Gen Fuel: Baseline = {base['generator_fuel_l_used']:.1f}L, GridGuard = {gg['generator_fuel_l_used']:.1f}L")
+        print(f"  Critical V out-of-band: A0 = {a0['time_v_crit_out_of_band_s']}s, B1 = {b1['time_v_crit_out_of_band_s']}s, GridGuard = {gg['time_v_crit_out_of_band_s']}s")
+        print(f"  Unmet critical load: A0 = {a0['unmet_critical_kwh']:.3f}kWh, B1 = {b1['unmet_critical_kwh']:.3f}kWh, GridGuard = {gg['unmet_critical_kwh']:.3f}kWh")
+        print(f"  SOC at 18:30: A0 = {a0['soc_at_1830']:.1f}%, B1 = {b1['soc_at_1830']:.1f}%, GridGuard = {gg['soc_at_1830']:.1f}%")
+        print(f"  Transfers: A0 = {a0['transfers']}, B1 = {b1['transfers']}, GridGuard = {gg['transfers']}")
+        print(f"  Gen Fuel: A0 = {a0['generator_fuel_l_used']:.1f}L, B1 = {b1['generator_fuel_l_used']:.1f}L, GridGuard = {gg['generator_fuel_l_used']:.1f}L")
         
 if __name__ == "__main__":
     main()
