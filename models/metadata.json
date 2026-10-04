@@ -1,0 +1,46 @@
+{
+  "features": [
+    "hour_sin",
+    "hour_cos",
+    "day_of_week",
+    "is_peak_window",
+    "temperature_c",
+    "cloud_cover_pct",
+    "dni_w_m2",
+    "load_critical_kw_lag_1h",
+    "load_critical_kw_lag_24h",
+    "load_critical_kw_rolling_mean_24h",
+    "solar_kw_lag_1h",
+    "solar_kw_lag_24h",
+    "solar_kw_rolling_mean_24h",
+    "v_pcc_pu_lag_1h",
+    "v_pcc_pu_lag_24h",
+    "v_pcc_pu_rolling_mean_24h"
+  ],
+  "results": {
+    "load_critical_kw": {
+      "q_0.1_pinball_val": 0.1924801824271592,
+      "q_0.1_pinball_test": 0.18527562831537558,
+      "q_0.5_pinball_val": 0.9624009121357958,
+      "q_0.5_pinball_test": 0.9263781415768779,
+      "mae_test": 1.8527562831537558,
+      "q_0.9_pinball_val": 1.7323216418444325,
+      "q_0.9_pinball_test": 1.6674806548383803
+    },
+    "solar_kw": {
+      "q_0.1_pinball_val": 0.24039034972677595,
+      "q_0.1_pinball_test": 0.2899805464480874,
+      "q_0.5_pinball_val": 1.20195174863388,
+      "q_0.5_pinball_test": 1.4499027322404372,
+      "mae_test": 2.8998054644808744,
+      "q_0.9_pinball_val": 2.1635131475409835,
+      "q_0.9_pinball_test": 2.609824918032787
+    },
+    "sag_risk": {
+      "brier_score": 0.0,
+      "pr_auc": 0.0,
+      "roc_auc": 0.0
+    }
+  },
+  "note": "pipeline demonstration; to be retrained on measured feeder data"
+}

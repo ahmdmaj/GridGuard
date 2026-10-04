@@ -1,0 +1,5 @@
+Variant,Unmet Critical (kWh),Fuel Used (L),V Out-of-band (s),Transfers
+A0: Baseline,0.0,63.0,660.0,1
+A1: GG Rule Median,4.710499999999874,29.625,660.0,1
+A2: GG ML Median,4.710499999999874,29.625,660.0,1
+A3: GG ML Pessimistic,4.710499999999874,29.625,660.0,1

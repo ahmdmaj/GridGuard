@@ -52,3 +52,9 @@ Execute the comprehensive suite of unit and integration tests verifying all math
 ```bash
 python -m pytest -v
 ```
+
+## Limitations and Risks
+- **Phase 1 Limitations**: The current implementation utilizes a simplified explicit integration step for resolving voltage/power circular dependencies (using the previous step's import power to calculate current voltage). For extreme impedance scenarios, this could introduce minor numerical instability.
+- **Perfect Sensors**: Telemetry currently assumes 100% accurate measurement (aside from explicitly injected noise). Sensor drift and calibration errors are not modeled.
+- **Rule-based Forecasts**: The current forecasting logic is simple and rule-based. Phase 2 ML integrations will introduce probabilistic forecast errors which the system must be tuned to handle gracefully.
+- **Hardware Limitations**: Battery degradation, thermal derating, and nonlinear efficiency curves are currently omitted to simplify the core ESH logic.
