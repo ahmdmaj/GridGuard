@@ -8,7 +8,7 @@
     },
     "generator_failure": {
         "critical_energy_served_kwh": 36.0,
-        "total_unserved_energy_kwh": 70.83333333333337,
+        "total_unserved_energy_kwh": 22.416666666666664,
         "generator_runtime_hours": 1.333333333333333,
         "fuel_consumed_liters": 3.7549999999999955,
         "solar_energy_used_kwh": 0.0
