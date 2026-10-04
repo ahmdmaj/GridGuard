@@ -1,13 +1,13 @@
 {
   "A0": {
     "unmet_critical_kwh": 0.0,
-    "generator_fuel_l_used": 14.56812499998675,
-    "time_v_crit_out_of_band_s": 80.0,
-    "transfers": 32,
-    "total_dropout_ms": 320.0,
-    "time_in_support_or_island_s": 18930.0,
-    "peak_grid_import_kw": 8.771594360118984,
-    "soc_at_1830": 84.80263157894694
+    "generator_fuel_l_used": 17.297499999984268,
+    "time_v_crit_out_of_band_s": 95.0,
+    "transfers": 38,
+    "total_dropout_ms": 380.0,
+    "time_in_support_or_island_s": 22920.0,
+    "peak_grid_import_kw": 8.726924259431195,
+    "soc_at_1830": 71.57894736842024
   },
   "B1": {
     "unmet_critical_kwh": 0.0,
@@ -15,7 +15,7 @@
     "time_v_crit_out_of_band_s": 10.0,
     "transfers": 2,
     "total_dropout_ms": 20.0,
-    "time_in_support_or_island_s": 22250.0,
+    "time_in_support_or_island_s": 24290.0,
     "peak_grid_import_kw": 9.0,
     "soc_at_1830": 88.15789473684177
   },
@@ -25,7 +25,7 @@
     "time_v_crit_out_of_band_s": 10.0,
     "transfers": 2,
     "total_dropout_ms": 20.0,
-    "time_in_support_or_island_s": 22250.0,
+    "time_in_support_or_island_s": 24290.0,
     "peak_grid_import_kw": 9.0,
     "soc_at_1830": 88.15789473684177
   },
@@ -33,19 +33,19 @@
     "git_commit": "f6f524edbfbe0d7f86dec7318b545d80d364fec7",
     "git_dirty": true,
     "config": {
-      "bg_peak_kw": 500.0,
+      "bg_peak_kw": 600.0,
       "sags": [
         {
           "depth": 1.0,
-          "duration_s": 14400,
+          "duration_s": 3600,
           "start": "2026-01-01T18:00:00"
         }
       ]
     },
-    "config_sha256": "30a96088b5ec1057cc114b00eb04e8fbd927101bce0101ef21fafedff931e17b",
+    "config_sha256": "5fc852aee524c5f388a0355c850ade5a5fbb2bae9029d6377a2cc27597837b58",
     "seed": null,
     "python_version": "3.14.5",
     "sklearn_version": "1.9.1",
-    "generated_at": "2026-10-04T13:28:53.750184+00:00"
+    "generated_at": "2026-10-04T13:28:59.172236+00:00"
   }
 }

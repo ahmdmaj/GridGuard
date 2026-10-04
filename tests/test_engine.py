@@ -254,3 +254,30 @@ def test_engine_config_overrides() -> None:
     )
     command_grid = engine.evaluate(twin_state_grid, esh, esh)
     assert command_grid["battery_command_kw"] == 0.0
+
+def test_engine_instantaneous_peak_demand() -> None:
+    engine = DecisionEngine()
+    engine.generator_requested = True # Simulate generator running
+    
+    twin_state = DigitalTwinState(
+        grid=GridState(is_available=False),
+        battery=BatteryState(soc=50.0),
+        solar=SolarState(power_kw=0.0),
+        generator=GeneratorState(is_available=True, power_kw=15.0),
+        loads=LoadState(critical_kw=10.0, important_kw=15.0, flexible_kw=20.0)
+    )
+    
+    # ESH is extremely high, should normally not shed loads
+    esh = {"all_loads_hours": 100.0, "critical_and_important_hours": 100.0, "critical_only_hours": 100.0}
+    
+    command = engine.evaluate(twin_state, esh, esh)
+    
+    # Total demand = 45 kW. Max supply = 0 (solar) + 20 (battery) + 15 (gen) = 35 kW.
+    # Instantaneous limit is exceeded.
+    # Critical + Important = 10 + 15 = 25 kW <= 35 kW.
+    # Therefore, flexible should be shed.
+    assert command["connect_flexible"] is False
+    assert command["connect_important"] is True
+    assert command["connect_critical"] is True
+    assert engine.current_mode == OperatingMode.GRID_FAILED
+    assert "Peak demand exceeded supply" in command["decision_reason"]

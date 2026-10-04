@@ -1,6 +1,10 @@
 import pytest
 import math
-from forecasting.service import ForecastService, WeatherCondition, DemandScenario
+import os
+import joblib
+from forecasting.service import ForecastService, MLForecastService, WeatherCondition, DemandScenario
+from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
+from sklearn.ensemble import RandomForestRegressor
 
 def get_mock_telemetry(timestamp="2026-01-01T12:00:00Z", solar_kw=10.0, load_kw=10.0) -> dict:
     return {
@@ -142,3 +146,37 @@ def test_deterministic_with_zero_uncertainty():
     result_2 = service.generate_forecast(telemetry, 12)
     
     assert result_1 == result_2
+
+def test_ml_forecast_service(tmp_path):
+    # Create a dummy model
+    model = RandomForestRegressor(n_estimators=1, random_state=42)
+    # X: [hour, minute, day_of_week]
+    X = [[12, 0, 0], [12, 5, 0]]
+    # y: [solar_kw, critical_kw, important_kw, flexible_kw]
+    y = [[10.0, 4.0, 3.0, 2.0], [9.9, 4.1, 3.1, 2.1]]
+    model.fit(X, y)
+    
+    model_path = tmp_path / "dummy_model.joblib"
+    joblib.dump(model, model_path)
+    
+    # Initialize MLForecastService
+    service = MLForecastService(model_path=str(model_path))
+    
+    # Create twin state
+    twin_state = DigitalTwinState(
+        timestamp="2026-01-01T12:00:00Z",
+        grid=GridState(),
+        solar=SolarState(),
+        battery=BatteryState(),
+        generator=GeneratorState(),
+        loads=LoadState()
+    )
+    
+    # Generate forecast
+    forecasts = service.generate_forecast(twin_state, 2)
+    
+    assert len(forecasts) == 2
+    keys = list(forecasts[0].keys())
+    assert set(keys) == {"solar_kw", "load_critical_kw", "load_important_kw", "load_flexible_kw"}
+    assert forecasts[0]["solar_kw"] >= 0.0
+    assert forecasts[0]["load_critical_kw"] >= 0.0

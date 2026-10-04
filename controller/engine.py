@@ -79,33 +79,54 @@ class DecisionEngine:
                 elif battery_only_esh.get("all_loads_hours", 0) > self.generator_stop_esh_hours and soc > self.hard_start_soc:
                     self.generator_requested = False
 
-            # Step 3: Grid Failed - Load Shedding via ESH (Phase E)
-            # Flexible Load Logic
-            if self.connect_flexible:
-                if full_esh.get("all_loads_hours", 0) < self.shed_flexible_esh:
+            # Step 2.1: Priority 3 - Instantaneous Power Balance
+            # Battery limit is 20kW. Gen limit is 15kW.
+            is_gen_running = twin_state.generator.power_kw > 0
+            max_available_kw = twin_state.solar.power_kw + 20.0 + (15.0 if is_gen_running else 0.0)
+            total_demand = twin_state.loads.critical_kw + twin_state.loads.important_kw + twin_state.loads.flexible_kw
+            
+            if total_demand > max_available_kw:
+                if twin_state.loads.critical_kw + twin_state.loads.important_kw <= max_available_kw:
                     self.connect_flexible = False
-            else:
-                if full_esh.get("critical_and_important_hours", 0) >= self.reconnect_flexible_esh:
-                    self.connect_flexible = True
-
-            # Important Load Logic
-            if self.connect_important:
-                if full_esh.get("critical_and_important_hours", 0) < self.shed_important_esh:
-                    self.connect_important = False
-            else:
-                if full_esh.get("critical_only_hours", 0) >= self.reconnect_important_esh:
                     self.connect_important = True
-
-            # Determine mode based on breaker states
-            if not self.connect_important:
-                self.current_mode = OperatingMode.ENERGY_SCARCITY
-                reason = "Grid failed. Critical ESH scarcity. Protecting critical loads only."
-            elif not self.connect_flexible:
-                self.current_mode = OperatingMode.GRID_FAILED
-                reason = "Grid failed. ESH declining. Shedding flexible loads."
+                    self.connect_critical = True
+                    self.current_mode = OperatingMode.GRID_FAILED
+                    reason = "Peak demand exceeded supply. Shedding flexible to stabilize voltage."
+                else:
+                    self.connect_flexible = False
+                    self.connect_important = False
+                    self.connect_critical = True
+                    self.current_mode = OperatingMode.ENERGY_SCARCITY
+                    reason = "Severe peak demand deficit. Protecting critical loads only."
             else:
-                self.current_mode = OperatingMode.GRID_FAILED
-                reason = "Grid failed. ESH healthy. All loads retained."
+                # Priority 4: Future Survival (ESH)
+                # Step 3: Grid Failed - Load Shedding via ESH (Phase E)
+                # Flexible Load Logic
+                if self.connect_flexible:
+                    if full_esh.get("all_loads_hours", 0) < self.shed_flexible_esh:
+                        self.connect_flexible = False
+                else:
+                    if full_esh.get("critical_and_important_hours", 0) >= self.reconnect_flexible_esh:
+                        self.connect_flexible = True
+
+                # Important Load Logic
+                if self.connect_important:
+                    if full_esh.get("critical_and_important_hours", 0) < self.shed_important_esh:
+                        self.connect_important = False
+                else:
+                    if full_esh.get("critical_only_hours", 0) >= self.reconnect_important_esh:
+                        self.connect_important = True
+
+                # Determine mode based on breaker states
+                if not self.connect_important:
+                    self.current_mode = OperatingMode.ENERGY_SCARCITY
+                    reason = "Grid failed. Critical ESH scarcity. Protecting critical loads only."
+                elif not self.connect_flexible:
+                    self.current_mode = OperatingMode.GRID_FAILED
+                    reason = "Grid failed. ESH declining. Shedding flexible loads."
+                else:
+                    self.current_mode = OperatingMode.GRID_FAILED
+                    reason = "Grid failed. ESH healthy. All loads retained."
 
             # Step 4: Grid Failed - Source Management
             active_load_kw = 0.0

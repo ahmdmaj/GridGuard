@@ -1,8 +1,12 @@
 import datetime
 import math
 import random
+import joblib
 from enum import Enum
 from typing import List, Dict, Any
+
+from simulator.constants import SIMULATION_TIMESTEP_MINUTES
+from digital_twin.state import DigitalTwinState
 
 from simulator.constants import SIMULATION_TIMESTEP_MINUTES
 
@@ -147,4 +151,57 @@ class ForecastService:
                 "load_flexible_kw": flex_kw,
             })
 
+        return forecasts
+
+class MLForecastService:
+    def __init__(self, model_path="ml/models/forecast_model.joblib"):
+        self.model_path = model_path
+        self.model = joblib.load(model_path)
+        
+    def generate_forecast(self, twin_state: DigitalTwinState, steps_ahead: int) -> list[dict]:
+        timestamp_str = twin_state.timestamp
+        if timestamp_str.endswith("Z"):
+            timestamp_str = timestamp_str[:-1]
+            
+        try:
+            current_dt = datetime.datetime.fromisoformat(timestamp_str)
+        except ValueError:
+            current_dt = datetime.datetime(2026, 1, 1, 0, 0, 0)
+            
+        forecasts = []
+        
+        # Batch predict for speed and to avoid warnings
+        import pandas as pd
+        features = []
+        for i in range(1, steps_ahead + 1):
+            future_dt = current_dt + datetime.timedelta(minutes=5 * i)
+            features.append({
+                "hour": future_dt.hour,
+                "minute": future_dt.minute,
+                "day_of_week": future_dt.weekday()
+            })
+            
+        df = pd.DataFrame(features)
+        predictions = self.model.predict(df)
+        
+        for pred in predictions:
+            forecasts.append({
+                "solar_kw": max(0.0, float(pred[0])),
+                "load_critical_kw": max(0.0, float(pred[1])),
+                "load_important_kw": max(0.0, float(pred[2])),
+                "load_flexible_kw": max(0.0, float(pred[3]))
+            })
+            
+        return forecasts
+
+class PersistenceForecastService:
+    def generate_forecast(self, twin_state: DigitalTwinState, steps_ahead: int) -> list[dict]:
+        forecasts = []
+        for _ in range(steps_ahead):
+            forecasts.append({
+                "solar_kw": twin_state.solar.power_kw,
+                "load_critical_kw": twin_state.loads.critical_kw,
+                "load_important_kw": twin_state.loads.important_kw,
+                "load_flexible_kw": twin_state.loads.flexible_kw
+            })
         return forecasts

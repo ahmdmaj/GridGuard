@@ -1,0 +1,17 @@
+Scenario,Controller,Fuel_L,Crit_Unserved,Imp_Unserved,Flex_Unserved
+S4_Outage,A0_Naive,27.22,0.0,0.0,0.0
+S4_Outage,B1_Hysteresis,29.29,0.0,0.0,0.0
+S4_Outage,GridGuard_Persistence,7.01,49.18,0.0,0.0
+S4_Outage,GridGuard_ML,7.01,49.18,0.0,0.0
+S8_Sensor_Noise,A0_Naive,0.0,0.0,0.0,0.0
+S8_Sensor_Noise,B1_Hysteresis,0.0,0.0,0.0,0.0
+S8_Sensor_Noise,GridGuard_Persistence,0.0,0.0,0.0,0.0
+S8_Sensor_Noise,GridGuard_ML,0.0,0.0,0.0,0.0
+S9_Peak_Demand,A0_Naive,42.49,180.41,0.0,0.0
+S9_Peak_Demand,B1_Hysteresis,42.49,180.41,0.0,0.0
+S9_Peak_Demand,GridGuard_Persistence,9.07,256.55,0.83,0.83
+S9_Peak_Demand,GridGuard_ML,7.42,269.47,3.33,10.0
+S11_Sunset_Outage,A0_Naive,15.26,0.0,0.0,0.0
+S11_Sunset_Outage,B1_Hysteresis,15.26,0.0,0.0,0.0
+S11_Sunset_Outage,GridGuard_Persistence,6.6,5.38,0.0,0.0
+S11_Sunset_Outage,GridGuard_ML,6.6,5.38,0.0,0.0

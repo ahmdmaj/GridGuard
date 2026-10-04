@@ -216,6 +216,18 @@ def main():
         "S8_sensor_noise": {
             "bg_peak_kw": 550.0,
             "noise_sigma": 0.05
+        },
+        "S9_peak_demand_outage": {
+            "bg_peak_kw": 600.0, # Will drop voltage, trigger GridGuard, and demand will be high (35kW max supply vs 45kW demand)
+            "sags": [
+                {"start": start_dt + datetime.timedelta(hours=6), "duration_s": 3600, "depth": 1.0}
+            ]
+        },
+        "S10_extended_peak": {
+            "bg_peak_kw": 500.0, 
+            "sags": [
+                {"start": start_dt + datetime.timedelta(hours=6), "duration_s": 3600, "depth": 1.0}
+            ]
         }
     }
     

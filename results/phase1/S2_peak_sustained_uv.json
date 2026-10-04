@@ -30,7 +30,7 @@
     "soc_at_1830": 100.0
   },
   "provenance": {
-    "git_commit": "ae8c4cf93ed51d86624dff55b060f0937b72f0bf",
+    "git_commit": "f6f524edbfbe0d7f86dec7318b545d80d364fec7",
     "git_dirty": true,
     "config": {
       "bg_peak_kw": 550.0
@@ -39,6 +39,6 @@
     "seed": null,
     "python_version": "3.14.5",
     "sklearn_version": "1.9.1",
-    "generated_at": "2026-10-04T13:21:39.476833+00:00"
+    "generated_at": "2026-10-04T13:28:51.424892+00:00"
   }
 }
