@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 import datetime
 import os
+import sys
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import joblib
 

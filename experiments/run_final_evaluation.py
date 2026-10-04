@@ -1,7 +1,11 @@
 import datetime
 import os
+import sys
 import csv
 import pandas as pd
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from physical.plant import PhysicalPlant
 from intelligence.baseline import BaselineController, BaselineHysteresisController
 from controller.engine import DecisionEngine
@@ -18,6 +22,8 @@ def run_evaluation(scenario_name: str, controller_name: str) -> dict:
         "generator_capacity_kw": 15.0,
         "bg_peak_kw": 300.0,
         "noise_sigma_pu": 0.0,
+        "reconnect_flexible_esh": 12.0,
+        "reconnect_important_esh": 12.0
     }
     
     start_time = datetime.datetime(2026, 1, 1, 12, 0, 0)
@@ -103,9 +109,9 @@ def run_evaluation(scenario_name: str, controller_name: str) -> dict:
             battery=BatteryState(soc=telemetry["soc"]),
             generator=GeneratorState(fuel_liters=telemetry["fuel_liters"], is_available=telemetry["gen_available"], power_kw=(15.0 if plant.generator.is_running else 0.0)),
             loads=LoadState(
-                critical_kw=plant.loads.get_tier_power_kw("critical", 1.0),
-                important_kw=plant.loads.get_tier_power_kw("important", 1.0),
-                flexible_kw=plant.loads.get_tier_power_kw("non_essential", 1.0)
+                critical_kw=plant.loads.nominal_kw["critical"],
+                important_kw=plant.loads.nominal_kw["important"],
+                flexible_kw=plant.loads.nominal_kw["non_essential"]
             )
         )
         
@@ -116,7 +122,13 @@ def run_evaluation(scenario_name: str, controller_name: str) -> dict:
             if current_time >= next_forecast_time:
                 forecasts = forecast_service.generate_forecast(twin_state, 12 * 12)
                 expected_esh = esh_calc.calculate_forecast_esh(twin_state, forecasts, assume_island=False)
-                shadow_esh = esh_calc.calculate_forecast_esh(twin_state, forecasts, assume_island=True)
+                
+                # Fix: Compute battery-only ESH by masking the generator
+                import copy
+                bat_twin = copy.deepcopy(twin_state)
+                bat_twin.generator.is_available = False
+                shadow_esh = esh_calc.calculate_forecast_esh(bat_twin, forecasts, assume_island=True)
+                
                 next_forecast_time += datetime.timedelta(minutes=15)
             cmd = controller.evaluate(twin_state, expected_esh, shadow_esh)
 
@@ -143,21 +155,19 @@ def run_evaluation(scenario_name: str, controller_name: str) -> dict:
         res = plant.step(dt_s, current_time, cmd)
         
         # Calculate unserved
-        # Unserved is recorded if the plant itself didn't serve it.
         telem = res["plant_telem"]
-        total_unserved = telem["unserved_kw"] * (dt_s / 3600.0)
         
-        # Apportion unserved: flexible first, then important, then critical
-        # If flexible was commanded disconnected, it's unserved.
-        req_flex = twin_state.loads.flexible_kw * (dt_s / 3600.0)
-        req_imp = twin_state.loads.important_kw * (dt_s / 3600.0)
-        req_crit = twin_state.loads.critical_kw * (dt_s / 3600.0)
+        req_flex = plant.loads.nominal_kw["non_essential"] * (dt_s / 3600.0)
+        req_imp = plant.loads.nominal_kw["important"] * (dt_s / 3600.0)
+        req_crit = plant.loads.nominal_kw["critical"] * (dt_s / 3600.0)
         
-        flex_unserved = req_flex if not flex_connected else 0.0
-        imp_unserved = req_imp if not imp_connected else 0.0
+        served_flex = telem["load_flexible_kw"] * (dt_s / 3600.0)
+        served_imp = telem["load_important_kw"] * (dt_s / 3600.0)
+        served_crit = telem["load_critical_kw"] * (dt_s / 3600.0)
         
-        # If there is additional physical unserved (e.g. voltage collapse), add it to critical
-        crit_unserved = max(0.0, total_unserved - flex_unserved - imp_unserved)
+        flex_unserved = max(0.0, req_flex - served_flex)
+        imp_unserved = max(0.0, req_imp - served_imp)
+        crit_unserved = max(0.0, req_crit - served_crit) + (telem["unserved_kw"] * (dt_s / 3600.0))
 
         metrics["Flex_Unserved"] += flex_unserved
         metrics["Imp_Unserved"] += imp_unserved

@@ -36,7 +36,8 @@ class DecisionEngine:
         if battery_only_esh is None:
             battery_only_esh = full_esh
 
-        is_grid_available = twin_state.grid.is_available
+        is_grid_available = twin_state.grid.is_available and twin_state.grid.voltage_pu >= 0.94
+        inverter_mode = "GRID_PASS" if is_grid_available else "ISLAND"
 
         if is_grid_available:
             self.current_mode = OperatingMode.NORMAL
@@ -59,7 +60,8 @@ class DecisionEngine:
                 "connect_critical": True,
                 "connect_important": True,
                 "connect_flexible": True,
-                "decision_reason": reason
+                "decision_reason": reason,
+                "inverter_mode": inverter_mode
             }
         else:
             # Step 2: Grid Failed - Generator Smart Dispatch (Phase D)
@@ -151,5 +153,6 @@ class DecisionEngine:
                 "connect_critical": self.connect_critical,
                 "connect_important": self.connect_important,
                 "connect_flexible": self.connect_flexible,
-                "decision_reason": reason
+                "decision_reason": reason,
+                "inverter_mode": inverter_mode
             }

@@ -1,6 +1,11 @@
 import datetime
+import sys
 import os
 import pandas as pd
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
 from controller.engine import DecisionEngine

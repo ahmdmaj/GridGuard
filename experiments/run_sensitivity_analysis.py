@@ -1,6 +1,11 @@
 import datetime
 import os
+import sys
 import pandas as pd
+
+# Ensure the root project directory is in the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from physical.plant import PhysicalPlant
 from controller.engine import DecisionEngine
 from forecasting.service import MLForecastService

@@ -16,6 +16,7 @@ class LocalProtection:
         """Called when a valid command or heartbeat arrives."""
         self.time_since_last_cmd_s = 0.0
         self.active_fallback_mode = None
+        self.cmd_received_this_step = True
         self.time_v_below_092_s = 0.0
         self.time_v_above_096_s = 0.0
 
@@ -24,8 +25,12 @@ class LocalProtection:
         Steps the protection logic.
         Returns the target InverterMode if fallback is active, otherwise None.
         """
-        self.time_since_last_cmd_s += dt_s
-        
+        if getattr(self, "cmd_received_this_step", False):
+            self.cmd_received_this_step = False
+            self.time_since_last_cmd_s = 0.0
+        else:
+            self.time_since_last_cmd_s += dt_s
+            
         if self.time_since_last_cmd_s <= self.watchdog_s:
             return None # Comms are healthy, no fallback
             
