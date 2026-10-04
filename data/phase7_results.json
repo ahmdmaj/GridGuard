@@ -2,15 +2,15 @@
     "Baseline": {
         "critical_energy_served_kwh": 36.0,
         "total_unserved_energy_kwh": 0.0,
-        "generator_runtime_hours": 7.916666666666655,
-        "fuel_consumed_liters": 7.155000000000271,
+        "generator_runtime_hours": 8.999999999999995,
+        "fuel_consumed_liters": 28.89473684210526,
         "solar_energy_used_kwh": 10.0
     },
     "GridGuard": {
         "critical_energy_served_kwh": 36.0,
         "total_unserved_energy_kwh": 0.0,
-        "generator_runtime_hours": 8.416666666666657,
-        "fuel_consumed_liters": 25.004999999999995,
+        "generator_runtime_hours": 4.833333333333333,
+        "fuel_consumed_liters": 21.75,
         "solar_energy_used_kwh": 10.0
     }
 }

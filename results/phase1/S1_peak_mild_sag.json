@@ -18,8 +18,8 @@
     "peak_grid_import_kw": 9.0
   },
   "provenance": {
-    "git_commit": "bb4bb64f2789179f93dabe30faf46aaec8e5c1d1",
-    "git_dirty": true,
+    "git_commit": "bc81d9fe46859ba1d0b25f757864dbdcce508299",
+    "git_dirty": false,
     "config": {
       "bg_peak_kw": 450.0
     },
@@ -27,6 +27,6 @@
     "seed": null,
     "python_version": "3.14.5",
     "sklearn_version": "1.9.1",
-    "generated_at": "2026-10-04T10:52:33.986631+00:00"
+    "generated_at": "2026-10-04T10:54:18.915733+00:00"
   }
 }
