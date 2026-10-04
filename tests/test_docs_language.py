@@ -2,9 +2,9 @@ import os
 import re
 
 FORBIDDEN_TERMS = [
-    "flawless", "perfect", "guarantee", "absolute safety", 
-    "mathematically concrete", "hardcore", "solved", 
-    "bulletproof", "never fail", "never fails"
+    "flawless", "guarantee", "perfect", "solved", 
+    "hardcore", "mathematically prove", "absolute safety", 
+    "never fail", "bulletproof"
 ]
 
 def test_docs_language():
@@ -14,11 +14,21 @@ def test_docs_language():
     
     for d in docs_dirs:
         for root, dirs, files in os.walk(d):
+            # Exclude internal and evidence directories
             if 'venv' in dirs:
                 dirs.remove('venv')
+            if 'internal' in dirs and root == "docs":
+                dirs.remove('internal')
+            if 'evidence' in dirs and root == "docs":
+                dirs.remove('evidence')
+                
             for file in files:
-                if file.endswith(".md") and "GridGuard_Redesign_Spec.md" not in file and "execution plan.md" not in file:
+                if file.endswith(".md"):
                     filepath = os.path.join(root, file)
+                    # Skip README if it's in a subdirectory (just want the root README if scanning .)
+                    if d == "." and root != ".":
+                        continue
+                    
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
                         

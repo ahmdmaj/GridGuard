@@ -1,69 +1,49 @@
-# GridGuard: Autonomous Energy Resilience Engine
+# GridGuard
 
-## Overview
-GridGuard is an autonomous energy resilience system designed to manage building energy during catastrophic grid failures. Instead of relying on static, reactive thresholds, GridGuard utilizes forecast-aware **Energy Survival Horizons (ESH)** to dynamically shed non-essential loads, optimizing battery life and generator fuel consumption to ensure critical infrastructure survives prolonged outages.
+GridGuard is an intelligent edge controller and Digital Twin simulator for high-reliability microgrids. It prevents critical power failures during severe grid anomalies by orchestrating batteries, generators, and load shedding based on physics-based simulations and machine learning forecasts.
 
-## Core Architecture (The "Air Gap")
-A fundamental design constraint of GridGuard is the strict decoupling of the Intelligence Layer from the Physical Layer. 
+## Project Structure
 
-- **Physical Layer**: The simulated `PhysicalPlant` (Grid, Solar, Battery, Generator, and Load).
-- **Intelligence Layer**: The `DecisionEngine`, `DigitalTwin`, `ForecastService`, and `ESHCalculator`.
+The repository is organized into the following core modules:
 
-These two layers operate as independent IoT nodes. They communicate *exclusively* via a Mock MQTT Broker using serialized JSON payloads (`TOPIC_TELEMETRY` and `TOPIC_COMMAND`). The Intelligence Layer can only see what the physical sensors broadcast, and the Physical Layer only reacts to validated command structures. This mathematical "Air Gap" ensures the AI cannot cheat by reading physical memory or private simulation variables, proving the system is fully networked and deployment-ready for the real world.
+* `physical/`: Physics-based models of the microgrid components (battery, generator, inverter, feeder, loads, protection relays).
+* `intelligence/`: The decision engine, baseline controllers, Energy Survival Horizon (ESH) calculator, and forecasting services.
+* `transport/`: Telemetry and communications layer, including MQTT broker abstractions.
+* `experiments/`: Experiment runner scripts for various scenarios, ablation studies, and sensitivity analysis.
+* `ml/`: Machine learning pipeline, feature engineering, and model training.
 
-## The Engine: Energy Survival Horizon (ESH)
-GridGuard's decision-making is powered by the Energy Survival Horizon (ESH) algorithm. 
+## Status
 
-Instead of waiting for the battery to hit a rigid panic threshold (e.g., 20% SOC), the ESH calculator steps forward in time through forecasted weather generation and load demands. It dynamically simulates the depletion curve across three load tiers (Critical Only, Critical + Important, All Loads) to find the exact fractional timestep of battery death. 
+| Feature | Done and tested | Implemented, not yet validated | Planned |
+| :--- | :--- | :--- | :--- |
+| **ML forecasting** | | Models trained on synthetic load and voltage data plus Open-Meteo weather for one location. The inference path currently uses placeholder weather and lag inputs; the ablation shows no difference between rule-based and ML variants. | |
+| **MQTT transport** | | Code present; not yet run against a broker. | |
+| **Monte Carlo and sensitivity** | | | Planned; earlier results withdrawn. |
 
-By constantly recalculating this horizon, GridGuard proactively sheds lower-tier loads when the future looks bleak, and uses a stateful hysteresis loop to safely cycle the generator—preserving critical fuel reserves while keeping the building alive.
+## Running GridGuard
 
-## Project Status
+The following experiments and legacy scripts are currently functional:
 
-| Feature | Status |
-|---|---|
-| Physical Simulation (Feeder, Loads, Inverter) | **Done and tested** |
-| Energy Survival Horizon (ESH) & Decision Engine | **Done and tested** |
-| Scenario Automation (S1-S8) & Monte Carlo | **Implemented but not yet validated** |
-| ML Forecasting | **Planned** (Pipeline implemented; trained models pending; system currently uses rule-based forecaster) |
+### Modern Experiments
+* `python experiments/run_scenarios.py`: Evaluates GridGuard and the baseline controller against Phase 1 anomaly scenarios (S1-S8).
+* `python experiments/run_ablation.py`: Evaluates forecast performance impact in a sag-to-outage scenario.
 
-## How to Run
+### Legacy Scripts
+These scripts use older simulation wrappers but remain functional for demonstration purposes:
+* `python run_live.py`: Runs a continuous, realtime visualization of the Digital Twin in the terminal.
+* `python run_experiment.py`: Runs a basic comparative trial.
+* `python run_disasters.py`: Runs a trial over edge-case disasters (solar scarcity, generator failure, comms blackout).
 
-GridGuard includes a comprehensive suite of execution scripts and visualizers. From the root directory, use the following commands to evaluate the system:
+## Installation
 
-### 1. Real-Time ASCII Visualizer
-Watch the Digital Twin, Physical Plant, and AI Controller interact frame-by-frame during a simulated grid failure.
+Ensure you are using Python 3.10 (as used in Docker and CI) or the local virtual environment (Python 3.14.5 for local experiments).
+
 ```bash
-python run_live.py
-```
+python -m venv venv
+# Windows
+.\venv\Scripts\activate
+# Linux/Mac
+source venv/bin/activate
 
-### 2. Head-to-Head Experiment
-Run a 12-hour stress test comparing GridGuard's AI against a standard, fixed-rule Baseline Controller.
-```bash
-python run_experiment.py
+pip install -r requirements.txt
 ```
-
-### 3. Fault & Disaster Scenarios
-Subject the architecture to severe physical and network disasters (e.g., generator failure, prolonged solar scarcity, and MQTT comms blackouts).
-```bash
-python run_disasters.py
-```
-
-### 4. ESH Mathematical Validation
-Run a strict battery depletion test to mathematically prove the accuracy of the ESH predictions and evaluate GridGuard's hardware sensitivity.
-```bash
-python validation/esh_validator.py
-python validation/sensitivity.py
-```
-
-### 5. Full Test Suite
-Execute the comprehensive suite of unit and integration tests verifying all mathematical models, nodes, and isolated logic.
-```bash
-python -m pytest -v
-```
-
-## Limitations and Risks
-- **Phase 1 Limitations**: The current implementation utilizes a simplified explicit integration step for resolving voltage/power circular dependencies (using the previous step's import power to calculate current voltage). For extreme impedance scenarios, this could introduce minor numerical instability.
-- **Idealised Sensors**: Telemetry currently assumes 100% accurate measurement (aside from explicitly injected noise). Sensor drift and calibration errors are not modeled.
-- **Rule-based Forecasts**: The current forecasting logic is simple and rule-based. Phase 2 ML integrations will introduce probabilistic forecast errors which the system must be tuned to handle gracefully.
-- **Hardware Limitations**: Battery degradation, thermal derating, and nonlinear efficiency curves are currently omitted to simplify the core ESH logic.
