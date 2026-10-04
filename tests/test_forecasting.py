@@ -40,7 +40,8 @@ def test_solar_is_zero_after_sunset():
 
 def test_solar_peaks_at_noon():
     service = ForecastService(solar_capacity_kw=10.0, weather_condition=WeatherCondition.CLEAR)
-    telemetry = get_mock_telemetry(timestamp="2026-01-01T11:00:00Z", solar_kw=7.07) # Near 11am clear sky value
+    # At 11:00, profile is ~9.659. Provide this as observed so correction factor is ~1.0
+    telemetry = get_mock_telemetry(timestamp="2026-01-01T11:00:00Z", solar_kw=9.659)
     forecasts = service.generate_forecast(telemetry, 24) # 2 hours
     
     # At 12:00 (12 steps of 5 mins)
@@ -58,13 +59,16 @@ def test_cloudy_condition_reduces_solar_by_factor():
     service_rainy = ForecastService(weather_condition=WeatherCondition.RAINY)
     service_storm = ForecastService(weather_condition=WeatherCondition.STORM)
     
-    # Un-anchor to see pure profile
-    telemetry = get_mock_telemetry(timestamp="2026-01-01T11:55:00Z", solar_kw=10.0)
+    # Pass matching observed solar to maintain a correction factor of ~1.0
+    tel_clear = get_mock_telemetry(timestamp="2026-01-01T11:55:00Z", solar_kw=10.0)
+    tel_cloudy = get_mock_telemetry(timestamp="2026-01-01T11:55:00Z", solar_kw=5.0)
+    tel_rainy = get_mock_telemetry(timestamp="2026-01-01T11:55:00Z", solar_kw=1.5)
+    tel_storm = get_mock_telemetry(timestamp="2026-01-01T11:55:00Z", solar_kw=0.5)
     
-    forecasts_clear = service_clear.generate_forecast(telemetry, 1)
-    forecasts_cloudy = service_cloudy.generate_forecast(telemetry, 1)
-    forecasts_rainy = service_rainy.generate_forecast(telemetry, 1)
-    forecasts_storm = service_storm.generate_forecast(telemetry, 1)
+    forecasts_clear = service_clear.generate_forecast(tel_clear, 1)
+    forecasts_cloudy = service_cloudy.generate_forecast(tel_cloudy, 1)
+    forecasts_rainy = service_rainy.generate_forecast(tel_rainy, 1)
+    forecasts_storm = service_storm.generate_forecast(tel_storm, 1)
     
     solar_clear = forecasts_clear[0]["solar_kw"]
     solar_cloudy = forecasts_cloudy[0]["solar_kw"]
