@@ -1,0 +1,1058 @@
+﻿
+===== intelligence\decision_engine.py =====
+
+import enum
+from typing import Dict, Any, List
+import datetime
+
+class EngineMode(enum.Enum):
+    NORMAL = "NORMAL"
+    SUPPORT = "SUPPORT"
+    ISLAND = "ISLAND"
+    GENERATOR_ASSIST = "GENERATOR_ASSIST"
+
+class DecisionEngine:
+    def __init__(self, config: dict = None) -> None:
+        cfg = config or {}
+        
+        # Voltage thresholds
+        self.v_support_enter = cfg.get("v_support_enter", 0.94)
+        self.v_support_exit = cfg.get("v_support_exit", 0.96)
+        self.v_island_enter = cfg.get("v_island_enter", 0.85)
+        
+        # Time thresholds
+        self.t_support_enter_s = cfg.get("t_support_enter_s", 10.0)
+        self.t_normal_return_s = cfg.get("t_normal_return_s", 600.0)
+        self.min_dwell_s = cfg.get("min_dwell_s", 30.0)
+        
+        # Transfers
+        self.max_transfers_per_hour = cfg.get("max_transfers_per_hour", 4)
+        
+        # Generator ESH
+        self.generator_start_esh_hours = cfg.get("generator_start_esh_hours", 2.0)
+        self.generator_stop_esh_hours = cfg.get("generator_stop_esh_hours", 12.0)
+        self.critical_reserve_soc = cfg.get("critical_reserve_soc", 30.0)
+        self.gen_start_delay_hours = cfg.get("gen_start_delay_hours", 0.25)
+        self.gen_start_margin_hours = cfg.get("gen_start_margin_hours", 0.5)
+        self.hard_start_soc = cfg.get("hard_start_soc", 20.0)
+        self.hysteresis_stop_soc = cfg.get("generator_stop_soc", 80.0)
+        
+        # Shedding ESH
+        self.shed_flexible_esh = cfg.get("shed_flexible_esh", 4.0)
+        self.reconnect_flexible_esh = cfg.get("reconnect_flexible_esh", 8.0)
+        self.shed_important_esh = cfg.get("shed_important_esh", 2.0)
+        self.reconnect_important_esh = cfg.get("reconnect_important_esh", 6.0)
+        
+        # Reserve floor
+        self.reserve_floor_soc = cfg.get("reserve_floor_soc", 50.0)
+        
+        # Time logic for pre-peak charging
+        self.pre_peak_start_h = cfg.get("pre_peak_start_h", 17.0)
+        self.pre_peak_end_h = cfg.get("pre_peak_end_h", 18.5)
+        self.pre_peak_soc_target = cfg.get("pre_peak_soc_target", 90.0)
+        self.charge_power_cap_kw = cfg.get("charge_power_cap_kw", 5.0) # Limit to avoid worsening feeder voltage
+
+        # State
+        self.current_mode = EngineMode.NORMAL
+        self.time_in_mode_s = 0.0
+        
+        self.time_v_below_enter = 0.0
+        self.time_v_above_exit = 0.0
+        
+        self.transfers_h: List[float] = [] # timestamps in seconds
+        
+        self.connect_flexible = True
+        self.connect_important = True
+        self.generator_requested = False
+
+    def _prune_transfers(self, current_time_s: float) -> None:
+        self.transfers_h = [t for t in self.transfers_h if current_time_s - t < 3600.0]
+
+    def evaluate(self, dt_s: float, current_time_s: float, telemetry: Dict[str, Any], full_esh: Dict[str, float], shadow_esh: Dict[str, float] = None) -> Dict[str, Any]:
+        if shadow_esh is None:
+            shadow_esh = full_esh
+            
+        self.time_in_mode_s += dt_s
+        self._prune_transfers(current_time_s)
+        
+        v_pcc = telemetry.get("v_rms_pu", 1.0)
+        grid_connected = telemetry.get("grid_connected", True)
+        soc = telemetry.get("soc", 100.0)
+        
+        # Track voltage timers
+        if not grid_connected or v_pcc < self.v_island_enter:
+            self.time_v_below_enter += dt_s
+            self.time_v_above_exit = 0.0
+        elif v_pcc < self.v_support_enter:
+            self.time_v_below_enter += dt_s
+            self.time_v_above_exit = 0.0
+        elif v_pcc >= self.v_support_exit:
+            self.time_v_above_exit += dt_s
+            self.time_v_below_enter = 0.0
+        else:
+            self.time_v_below_enter = 0.0
+            self.time_v_above_exit = 0.0
+            
+        # Determine base grid/inverter state
+        target_mode = self.current_mode
+        
+        # Parse current hour from ISO format ts if available
+        ts_str = telemetry.get("ts", "")
+        current_hour = 12.0 # Default if missing
+        if ts_str:
+            try:
+                # Remove Z and parse
+                dt = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                current_hour = dt.hour + dt.minute / 60.0
+            except Exception:
+                pass
+        
+        # Pre-peak charging logic
+        is_pre_peak = self.pre_peak_start_h <= current_hour < self.pre_peak_end_h
+        charge_cap_kw = None
+        
+        if not grid_connected or v_pcc < self.v_island_enter:
+            target_mode = EngineMode.ISLAND
+        elif v_pcc < self.v_support_enter and self.time_v_below_enter >= self.t_support_enter_s:
+            if target_mode == EngineMode.NORMAL:
+                target_mode = EngineMode.SUPPORT
+        elif v_pcc >= self.v_support_exit and self.time_v_above_exit >= self.t_normal_return_s and soc >= self.reserve_floor_soc:
+            if target_mode in [EngineMode.SUPPORT, EngineMode.ISLAND]:
+                target_mode = EngineMode.NORMAL
+                
+        # If we are supposed to be NORMAL but it's pre-peak and SOC is low, override to SUPPORT
+        if target_mode == EngineMode.NORMAL and is_pre_peak and soc < self.pre_peak_soc_target:
+            target_mode = EngineMode.SUPPORT
+            charge_cap_kw = self.charge_power_cap_kw
+                
+        # Protect against thrashing limits
+        if target_mode != self.current_mode:
+            # If we are trying to go to a LESS protective mode, check limits
+            # ISLAND > SUPPORT > NORMAL
+            protective_rank = {EngineMode.ISLAND: 3, EngineMode.SUPPORT: 2, EngineMode.NORMAL: 1, EngineMode.GENERATOR_ASSIST: 4}
+            
+            if protective_rank[target_mode] < protective_rank[self.current_mode]:
+                if len(self.transfers_h) >= self.max_transfers_per_hour or self.time_in_mode_s < self.min_dwell_s:
+                    target_mode = self.current_mode # Hold more protective mode
+            
+        if target_mode != self.current_mode:
+            self.transfers_h.append(current_time_s)
+            self.current_mode = target_mode
+            self.time_in_mode_s = 0.0
+            
+        # Load shedding logic (F3: Critical Reserve SOC)
+        # If SOC falls below critical_reserve_soc, shed everything except critical load
+        if soc <= self.critical_reserve_soc:
+            self.connect_flexible = False
+            self.connect_important = False
+        else:
+            if self.connect_flexible:
+                if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
+                    self.connect_flexible = False
+            else:
+                if full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
+                    self.connect_flexible = True
+
+            if self.connect_important:
+                if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
+                    self.connect_important = False
+            else:
+                if full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
+                    self.connect_important = True
+
+        # Generator logic (F3: Start when ESH_island_critical_worst_case <= T_gen_delay + T_margin)
+        if not self.generator_requested:
+            # We add a 1% buffer to hard_start_soc to ensure we don't fall below exactly 20.0% due to discrete steps
+            if soc <= (self.hard_start_soc + 1.0):
+                self.generator_requested = True
+            elif shadow_esh.get("critical_only_hours", 100.0) <= (self.gen_start_delay_hours + self.gen_start_margin_hours):
+                self.generator_requested = True
+        else:
+            if soc >= self.hysteresis_stop_soc:
+                self.generator_requested = False
+            # Remove the short-cycling ESH stop logic that was incorrectly including fuel
+                
+        if self.generator_requested:
+            self.current_mode = EngineMode.GENERATOR_ASSIST
+        elif self.current_mode == EngineMode.GENERATOR_ASSIST:
+            # If generator was requested but is now false, and grid is still dead, go back to ISLAND
+            self.current_mode = EngineMode.ISLAND
+        if self.current_mode == EngineMode.NORMAL:
+            inv_mode = "GRID_PASS"
+        elif self.current_mode == EngineMode.SUPPORT:
+            inv_mode = "SUPPORT"
+        else: # ISLAND or GENERATOR_ASSIST
+            inv_mode = "ISLAND"
+            
+        shed_tier = 0
+        if not self.connect_important:
+            shed_tier = 2
+        elif not self.connect_flexible:
+            shed_tier = 1
+            
+        gen_cmd = "START" if self.generator_requested else "STOP"
+        
+        command = {
+            "inverter_mode": inv_mode,
+            "shed_tier": shed_tier,
+            "gen_cmd": gen_cmd,
+            "reason": f"Mode: {self.current_mode.value}. V_pcc: {v_pcc:.3f}"
+        }
+        
+        if charge_cap_kw is not None:
+            command["charge_limit_kw"] = charge_cap_kw
+            
+        return command
+
+===== intelligence\baseline.py =====
+
+from typing import Dict, Any
+
+class BaselineController:
+    """
+    Representative of a basic UPS + generator setup.
+    - Switches to battery (ISLAND) on V < 0.94, instantly, no hysteresis or dwell time.
+    - Generator starts strictly when SOC < 30%.
+    - No pre-peak charging.
+    """
+    def __init__(self) -> None:
+        self.generator_start_soc = 30.0
+        self.generator_stop_soc = 90.0
+        
+        self.shed_flexible_soc = 50.0
+        self.reconnect_flexible_soc = 70.0
+        
+        self.shed_important_soc = 20.0
+        self.reconnect_important_soc = 40.0
+        
+        self.generator_requested = False
+        self.connect_flexible = True
+        self.connect_important = True
+
+    def evaluate(self, dt_s: float, current_time_s: float, telemetry: Dict[str, Any]) -> Dict[str, Any]:
+        v_pcc = telemetry.get("v_rms_pu", 1.0)
+        grid_connected = telemetry.get("grid_connected", True)
+        soc = telemetry.get("soc", 100.0)
+        
+        # Grid/Inverter state
+        # Very simple rules: if voltage is bad, Island. If good, Grid Pass.
+        if not grid_connected or v_pcc < 0.94:
+            inv_mode = "ISLAND"
+        else:
+            inv_mode = "GRID_PASS"
+            
+        # Generator state
+        if not self.generator_requested and soc < self.generator_start_soc:
+            self.generator_requested = True
+        elif self.generator_requested and soc >= self.generator_stop_soc:
+            self.generator_requested = False
+            
+        gen_cmd = "START" if self.generator_requested else "STOP"
+        
+        # Shedding
+        if self.connect_flexible:
+            if soc < self.shed_flexible_soc:
+                self.connect_flexible = False
+        else:
+            if soc >= self.reconnect_flexible_soc:
+                self.connect_flexible = True
+
+        if self.connect_important:
+            if soc < self.shed_important_soc:
+                self.connect_important = False
+        else:
+            if soc >= self.reconnect_important_soc:
+                self.connect_important = True
+                
+        shed_tier = 0
+        if not self.connect_important:
+            shed_tier = 2
+        elif not self.connect_flexible:
+            shed_tier = 1
+            
+        return {
+            "inverter_mode": inv_mode,
+            "shed_tier": shed_tier,
+            "gen_cmd": gen_cmd,
+            "reason": f"Baseline UPS logic. V: {v_pcc:.3f}, SOC: {soc:.1f}%"
+        }
+
+===== intelligence\esh.py =====
+
+from typing import Dict, Any, List
+from simulator.constants import SIMULATION_TIMESTEP_MINUTES
+
+_UNMET_TOLERANCE_KW = 0.001
+
+class ESHCalculator:
+    def __init__(self, config: dict = None) -> None:
+        cfg = config or {}
+        self.battery_capacity_kwh     = cfg.get("battery_capacity_kwh",      40.0)
+        self.battery_min_soc_percent  = cfg.get("battery_min_soc_percent",   20.0)
+        self.battery_max_soc_percent  = cfg.get("battery_max_soc_percent",  100.0)
+        self.battery_max_charge_kw    = cfg.get("battery_max_charge_kw",     20.0)
+        self.battery_max_discharge_kw = cfg.get("battery_max_discharge_kw",  20.0)
+        self.battery_charge_eff       = cfg.get("battery_charge_efficiency",  0.95)
+        self.battery_discharge_eff    = cfg.get("battery_discharge_efficiency", 0.95)
+        self.generator_capacity_kw    = cfg.get("generator_capacity_kw",     15.0)
+        self.generator_fuel_rate      = cfg.get("generator_fuel_rate_l_per_kwh", 0.3)
+        self.timestep_minutes         = cfg.get("simulation_timestep_minutes", SIMULATION_TIMESTEP_MINUTES)
+
+    def _usable_battery_raw_kwh(self, soc: float) -> float:
+        return max(0.0, (soc - self.battery_min_soc_percent) / 100.0 * self.battery_capacity_kwh)
+
+    @staticmethod
+    def _tier_demand(tier: str, step: Dict[str, float]) -> float:
+        if tier == "critical_only":
+            return step.get("load_critical_kw", 0.0)
+        if tier == "critical_and_important":
+            return step.get("load_critical_kw", 0.0) + step.get("load_important_kw", 0.0)
+        return step.get("load_critical_kw", 0.0) + step.get("load_important_kw", 0.0) + step.get("load_flexible_kw", 0.0)
+
+    def calculate_forecast_esh(
+        self,
+        twin_state: Dict[str, Any],
+        forecast: List[Dict[str, float]],
+        assume_island: bool = False
+    ) -> Dict[str, float]:
+        """
+        Calculates ESH.
+        If assume_island is True, it ignores the grid_ok_prob in the forecast and assumes the grid is dead.
+        Otherwise, it uses grid_ok_prob (1.0 = grid available, 0.0 = grid failed).
+        """
+        dt_hours = self.timestep_minutes / 60.0
+
+        initial_bat_energy  = self._usable_battery_raw_kwh(twin_state.get("soc", 100.0)) # Note: Using direct telemetry instead of nested battery_state
+        initial_fuel        = twin_state.get("fuel_liters", 100.0)
+        initial_gen_avail   = twin_state.get("gen_available", True)
+
+        results: Dict[str, float] = {}
+
+        for tier in ("critical_only", "critical_and_important", "all_loads"):
+            bat_energy = initial_bat_energy
+            fuel       = initial_fuel
+            gen_avail  = initial_gen_avail
+
+            hours_survived   = 0.0
+            failed           = False
+            last_tier_demand = 0.0
+            last_solar_kw    = 0.0
+            last_grid_ok     = False
+
+            for step in forecast:
+                tier_demand_kw = self._tier_demand(tier, step)
+                solar_kw       = step.get("solar_kw", 0.0)
+                grid_ok_prob   = 0.0 if assume_island else step.get("grid_ok_prob", 0.0)
+                grid_ok        = grid_ok_prob > 0.5 # Simple boolean logic for Phase 1
+                
+                last_tier_demand = tier_demand_kw
+                last_solar_kw    = solar_kw
+                last_grid_ok     = grid_ok
+
+                if grid_ok:
+                    # Grid satisfies all demand
+                    remaining_kw = 0.0
+                    # Grid charges battery
+                    surplus_kw = self.battery_max_charge_kw # Effectively infinite grid power up to charge limit
+                    charge_kw = min(surplus_kw, self.battery_max_charge_kw)
+                    energy_in = charge_kw * dt_hours * self.battery_charge_eff
+                    bat_room  = (self.battery_capacity_kwh * (self.battery_max_soc_percent - self.battery_min_soc_percent) / 100.0) - bat_energy
+                    bat_energy += min(energy_in, max(0.0, bat_room))
+                else:
+                    # Island logic
+                    remaining_kw = max(0.0, tier_demand_kw - solar_kw)
+                    surplus_kw   = max(0.0, solar_kw - tier_demand_kw)
+
+                    if surplus_kw > 0.0:
+                        charge_kw = min(surplus_kw, self.battery_max_charge_kw)
+                        energy_in = charge_kw * dt_hours * self.battery_charge_eff
+                        bat_room  = (self.battery_capacity_kwh * (self.battery_max_soc_percent - self.battery_min_soc_percent) / 100.0) - bat_energy
+                        bat_energy += min(energy_in, max(0.0, bat_room))
+
+                    if remaining_kw > 0.0 and gen_avail and fuel > 0.0:
+                        gen_kw      = min(remaining_kw, self.generator_capacity_kw)
+                        fuel_needed = gen_kw * dt_hours * self.generator_fuel_rate
+                        if fuel_needed > fuel:
+                            gen_kw = (fuel / self.generator_fuel_rate) / dt_hours
+                            fuel   = 0.0
+                        else:
+                            fuel -= fuel_needed
+                        remaining_kw = max(0.0, remaining_kw - gen_kw)
+
+                    if remaining_kw > 0.0 and bat_energy > 0.0:
+                        energy_needed  = remaining_kw * dt_hours / self.battery_discharge_eff
+                        max_bat_drain  = min(self.battery_max_discharge_kw * dt_hours, bat_energy)
+                        actual_drain   = min(energy_needed, max_bat_drain)
+                        bat_kw_out     = actual_drain * self.battery_discharge_eff / dt_hours
+                        bat_energy    -= actual_drain
+                        remaining_kw   = max(0.0, remaining_kw - bat_kw_out)
+
+                if remaining_kw > _UNMET_TOLERANCE_KW:
+                    supplied_kw    = tier_demand_kw - remaining_kw
+                    fraction       = (supplied_kw / tier_demand_kw) if tier_demand_kw > 0 else 1.0
+                    hours_survived += fraction * dt_hours
+                    failed         = True
+                    break
+
+                hours_survived += dt_hours
+
+            # Post-forecast extension
+            if not failed and len(forecast) > 0:
+                if last_grid_ok:
+                    hours_survived = float("inf")
+                else:
+                    final_net_kw = last_tier_demand - last_solar_kw
+                    if final_net_kw <= 0.0:
+                        hours_survived = float("inf")
+                    else:
+                        bat_deliverable  = bat_energy * self.battery_discharge_eff
+                        gen_energy_left  = (fuel / self.generator_fuel_rate if gen_avail and fuel > 0.0 else 0.0)
+                        remaining_energy = bat_deliverable + gen_energy_left
+
+                        gen_power   = self.generator_capacity_kw if (gen_avail and fuel > 0.0) else 0.0
+                        max_rate_kw = self.battery_max_discharge_kw + gen_power
+
+                        if final_net_kw > max_rate_kw:
+                            if self.battery_max_discharge_kw > 0.0:
+                                hours_survived += bat_deliverable / self.battery_max_discharge_kw
+                        else:
+                            hours_survived += remaining_energy / final_net_kw
+
+            results[f"{tier}_hours"] = hours_survived
+
+        return results
+
+===== physical\plant.py =====
+
+from typing import Dict, Any, Optional
+import datetime
+
+from physical.feeder import FeederModel
+from physical.inverter_sts import InverterSTS, InverterMode
+from physical.loads import LoadModel
+from physical.battery import Battery
+from physical.generator import Generator
+from physical.solar import SolarPV
+from physical.pq_node import PowerQualityNode
+from physical.local_protection import LocalProtection
+
+class PhysicalPlant:
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.config = config
+        self.feeder = FeederModel(config)
+        self.inverter = InverterSTS(config)
+        self.loads = LoadModel(config)
+        self.battery = Battery()
+        self.generator = Generator(config)
+        self.solar = SolarPV()
+        self.pq_node = PowerQualityNode(config)
+        self.local_protection = LocalProtection(config)
+        
+        self.last_p_site_kw = 0.0
+        self.time_s = 0.0
+        
+        # Telemetry state
+        self.v_pcc_pu = 1.0
+        self.v_crit_pu = 1.0
+        self.load_kw = 0.0
+        self.solar_kw = 0.0
+        self.batt_kw = 0.0
+        self.gen_kw = 0.0
+        self.unserved_kw = 0.0
+
+    def step(self, dt_s: float, current_time: datetime.datetime, command: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Steps the physical plant simulation.
+        command format: {"inverter_mode": "GRID_PASS", "shed_tier": 0, "gen_cmd": "HOLD", "charge_limit_kw": 5.0}
+        """
+        # 1. Grid voltage based on last step's site import
+        self.v_pcc_pu = self.feeder.get_voltage_pu(current_time, self.last_p_site_kw)
+        
+        # 2. Local Protection & Command processing
+        if command:
+            self.local_protection.receive_command()
+            target_mode = InverterMode(command.get("inverter_mode", "GRID_PASS"))
+            shed_tier = command.get("shed_tier", 0)
+            gen_cmd = command.get("gen_cmd", "HOLD")
+            charge_limit = command.get("charge_limit_kw", self.battery.max_charge_power_kw)
+        else:
+            target_mode = self.inverter.current_mode # Default hold
+            shed_tier = 0 # Default no shed? Actually should hold last state, but keep simple
+            gen_cmd = "HOLD"
+            charge_limit = self.battery.max_charge_power_kw
+            
+        fallback = self.local_protection.step(dt_s, self.v_pcc_pu, self.inverter.current_mode)
+        if fallback:
+            target_mode = fallback
+            
+        # 3. Apply Load shedding
+        # 0 = All connected, 1 = Shed flexible (non_essential), 2 = Shed important and flexible
+        if shed_tier == 0:
+            self.loads.set_connection("non_essential", True)
+            self.loads.set_connection("important", True)
+        elif shed_tier == 1:
+            self.loads.set_connection("non_essential", False)
+            self.loads.set_connection("important", True)
+        elif shed_tier == 2:
+            self.loads.set_connection("non_essential", False)
+            self.loads.set_connection("important", False)
+            
+        # 4. Generator Control
+        if gen_cmd == "START":
+            self.generator.start()
+        elif gen_cmd == "STOP":
+            self.generator.stop()
+            
+        # 5. Inverter Step
+        # Pre-calculate nominal load to check overload
+        nominal_load_kw = self.loads.get_total_power_kw(1.0)
+        self.v_crit_pu, dropout_ms, overload = self.inverter.step(target_mode, dt_s, self.v_pcc_pu, nominal_load_kw)
+        
+        # 6. Actual Load and Generation
+        self.load_kw = self.loads.get_total_power_kw(self.v_crit_pu)
+        self.solar_kw = self.solar.get_generation()
+        
+        duration_m = dt_s / 60.0
+        
+        if self.generator.is_running:
+            requested_kw = max(0.0, self.load_kw - self.solar_kw + charge_limit)
+            self.gen_kw = self.generator.generate(requested_kw, duration_minutes=duration_m)
+        else:
+            self.gen_kw = self.generator.generate(0.0, duration_minutes=duration_m)
+            
+        # 7. Energy Balance & Battery
+        # The inverter acts as the gateway. 
+        self.unserved_kw = 0.0
+        grid_connected = (self.inverter.current_mode != InverterMode.ISLAND)
+        duration_m = dt_s / 60.0
+        
+        if not grid_connected:
+            # ISLAND mode
+            self.last_p_site_kw = 0.0
+            net_demand = self.load_kw - self.solar_kw - self.gen_kw
+            
+            if net_demand > 0:
+                self.batt_kw = self.battery.discharge(net_demand, duration_minutes=duration_m)
+                if self.batt_kw < net_demand:
+                    self.unserved_kw = net_demand - self.batt_kw
+            else:
+                self.batt_kw = -self.battery.charge(abs(net_demand), duration_minutes=duration_m)
+        else:
+            # GRID_PASS or SUPPORT
+            net_demand = self.load_kw - self.solar_kw - self.gen_kw
+            
+            if net_demand < 0:
+                # Excess power on site, charge battery or export
+                self.batt_kw = -self.battery.charge(min(abs(net_demand), charge_limit), duration_minutes=duration_m)
+                export_kw = abs(net_demand) - abs(self.batt_kw)
+                self.last_p_site_kw = -export_kw
+            else:
+                # Need power from grid or battery
+                if self.inverter.current_mode == InverterMode.SUPPORT:
+                    # In SUPPORT, battery is used to help if grid is sagging, but let's assume it charges if instructed
+                    if command and "charge_limit_kw" in command:
+                        self.batt_kw = -self.battery.charge(charge_limit, duration_minutes=duration_m)
+                    else:
+                        self.batt_kw = 0.0
+                    self.last_p_site_kw = net_demand + abs(self.batt_kw)
+                else:
+                    # GRID_PASS
+                    self.batt_kw = 0.0
+                    self.last_p_site_kw = net_demand
+                    
+        # Update battery step time (the battery in simulator uses SIMULATION_TIMESTEP_MINUTES globally, but we should just let it run)
+        # Actually simulator.battery assumes 5 min steps when we call discharge/charge
+        
+        # Return combined telemetry
+        telem = {
+            "ts": current_time.isoformat() + "Z",
+            "v_rms_pu": self.v_pcc_pu,
+            "v_crit_pu": self.v_crit_pu,
+            "grid_connected": grid_connected,
+            "soc": self.battery.soc,
+            "fuel_liters": self.generator.fuel_liters,
+            "gen_available": self.generator.is_available,
+            "solar_kw": self.solar_kw,
+            "load_critical_kw": self.loads.get_tier_power_kw("critical", self.v_crit_pu),
+            "load_important_kw": self.loads.get_tier_power_kw("important", self.v_crit_pu),
+            "load_flexible_kw": self.loads.get_tier_power_kw("non_essential", self.v_crit_pu),
+            "unserved_kw": self.unserved_kw,
+            "sts_state": self.inverter.current_mode.value,
+            "transfer_count": len(self.inverter.__dict__.get("transfers_h", [])), # Mocked
+            "dropout_ms": dropout_ms
+        }
+        
+        # Run PQ node to get formatted grid_pq telemetry
+        pq_telem = self.pq_node.generate_telemetry(current_time, self.v_pcc_pu, grid_connected, self.inverter.current_mode.value, 0)
+        
+        return {"plant_telem": telem, "grid_pq": pq_telem}
+
+===== physical\inverter_sts.py =====
+
+import enum
+from typing import Dict, Any, Tuple
+
+class InverterMode(enum.Enum):
+    GRID_PASS = "GRID_PASS"
+    SUPPORT = "SUPPORT"
+    ISLAND = "ISLAND"
+
+class InverterSTS:
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.inverter_rating_kw = config.get("inverter_rating_kw", 20.0)
+        self.battery_max_discharge_kw = config.get("battery_max_discharge_kw", 20.0)
+        self.efficiency = config.get("efficiency", 0.95)
+        self.transfer_time_ms = config.get("transfer_time_ms", 10.0)
+        self.min_dwell_s = config.get("min_dwell_s", 5.0)
+        
+        self.current_mode = InverterMode.GRID_PASS
+        self.time_in_mode_s = self.min_dwell_s
+
+    def step(self, target_mode: InverterMode, dt_s: float, pcc_v_pu: float, load_kw: float) -> Tuple[float, float, bool]:
+        """
+        Steps the inverter model.
+        Returns:
+            critical_bus_v_pu: The voltage on the critical bus.
+            dropout_ms: Dropout time experienced during this step (due to transfer).
+            overload: True if the inverter rating was exceeded.
+        """
+        dropout_ms = 0.0
+        
+        # Enforce min dwell time
+        if target_mode != self.current_mode:
+            if self.time_in_mode_s >= self.min_dwell_s:
+                self.current_mode = target_mode
+                self.time_in_mode_s = 0.0
+                dropout_ms = self.transfer_time_ms
+        
+        self.time_in_mode_s += dt_s
+        
+        overload = False
+        critical_bus_v_pu = 1.0
+
+        if self.current_mode == InverterMode.GRID_PASS:
+            # Critical bus matches PCC voltage
+            critical_bus_v_pu = pcc_v_pu
+            # In pass-through, the inverter rating does not limit the load (it's bypassing)
+            # Actually, static transfer switch might have a rating, but assume infinite or very high for pass-through
+        else:
+            # SUPPORT or ISLAND mode: inverter creates the waveform
+            if load_kw > self.inverter_rating_kw:
+                overload = True
+                # Voltage collapses proportionally to the overload (simple model)
+                critical_bus_v_pu = self.inverter_rating_kw / load_kw
+            else:
+                critical_bus_v_pu = 1.0
+                
+        return critical_bus_v_pu, dropout_ms, overload
+
+===== physical\generator.py =====
+
+from simulator.constants import SIMULATION_TIMESTEP_MINUTES
+
+from typing import Dict, Any
+from simulator.constants import SIMULATION_TIMESTEP_MINUTES
+
+class Generator:
+    def __init__(self, config: Dict[str, Any] = None) -> None:
+        cfg = config or {}
+        self.capacity_kw: float = cfg.get("generator_capacity_kw", 15.0)
+        self.fuel_liters: float = cfg.get("generator_tank_liters", 100.0)
+        self.max_fuel_liters: float = cfg.get("generator_tank_liters", 100.0)
+        
+        # Reference estimate [cited from typical 15kW genset datasheets]:
+        # Linear model: Fuel (L/h) = no_load_coeff * Rated_kW + load_coeff * Output_kW
+        self.no_load_coeff: float = cfg.get("generator_no_load_coeff", 0.08)
+        self.load_coeff: float = cfg.get("generator_load_coeff", 0.25)
+        
+        self.is_available: bool = True
+        self.is_running: bool = False
+
+    def start(self) -> None:
+        if self.is_available and self.fuel_liters > 0:
+            self.is_running = True
+
+    def stop(self) -> None:
+        self.is_running = False
+
+    def set_availability(self, available: bool) -> None:
+        self.is_available = available
+        if not self.is_available:
+            self.stop()
+
+    def add_fuel(self, liters: float) -> None:
+        self.fuel_liters = min(self.max_fuel_liters, self.fuel_liters + liters)
+
+    def generate(self, requested_power_kw: float, duration_minutes: float = SIMULATION_TIMESTEP_MINUTES) -> float:
+        if not self.is_running:
+            return 0.0
+
+        actual_power_kw = min(requested_power_kw, self.capacity_kw)
+        hours = duration_minutes / 60.0
+        
+        fuel_rate_l_h = (self.no_load_coeff * self.capacity_kw) + (self.load_coeff * actual_power_kw)
+        fuel_needed = fuel_rate_l_h * hours
+
+        if fuel_needed > self.fuel_liters:
+            # If fuel runs out during this step, prorate the generated energy
+            fraction_run = self.fuel_liters / fuel_needed
+            actual_power_kw = actual_power_kw * fraction_run
+            self.fuel_liters = 0.0
+            self.stop()
+        else:
+            self.fuel_liters -= fuel_needed
+
+        return actual_power_kw
+
+===== experiments\run_scenarios.py =====
+
+import datetime
+import json
+import os
+from physical.plant import PhysicalPlant
+from physical.feeder import SagEvent
+from intelligence.baseline import BaselineController
+from intelligence.decision_engine import DecisionEngine
+from intelligence.esh import ESHCalculator
+
+def generate_rule_forecast(current_time: datetime.datetime, horizon_s: float, step_s: float) -> list:
+    """Simple Phase 1 rule-based forecast."""
+    # We'll just assume grid is perfectly fine for the forecast in Phase 1 unless the voltage was recently bad
+    # For now, let's keep it super simple: assume grid is OK, solar is constant, load is constant.
+    forecast = []
+    t = current_time
+    end_t = current_time + datetime.timedelta(seconds=horizon_s)
+    
+    # In a real system this would predict the peak window.
+    while t < end_t:
+        forecast.append({
+            "load_critical_kw": 4.0,
+            "load_important_kw": 3.0,
+            "load_flexible_kw": 2.0,
+            "solar_kw": 0.0, # Worst case solar
+            "grid_ok_prob": 1.0 # Assume grid is fine
+        })
+        t += datetime.timedelta(seconds=step_s)
+    return forecast
+
+def run_simulation(scenario_id: str, scenario_config: dict, use_baseline: bool) -> dict:
+    config = {
+        "z_pu": 0.1,
+        "p_feeder_rating_kw": 500.0,
+        "bg_peak_kw": scenario_config.get("bg_peak_kw", 300.0),
+        "noise_sigma_pu": scenario_config.get("noise_sigma", 0.0),
+        "inverter_rating_kw": 20.0,
+        "battery_capacity_kwh": 40.0,
+        "generator_capacity_kw": 15.0,
+        "critical_kw": 4.0,
+        "important_kw": 3.0,
+        "non_essential_kw": 2.0
+    }
+    
+    plant = PhysicalPlant(config)
+    
+    # Inject Sag Events
+    for sag in scenario_config.get("sags", []):
+        plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
+        
+    if use_baseline:
+        controller = BaselineController()
+    else:
+        controller = DecisionEngine(config)
+        esh_calc = ESHCalculator(config)
+        
+    current_time = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    dt_s = 5.0
+    end_time = datetime.datetime(2026, 1, 2, 0, 0, 0) # 12 hours
+    
+    metrics = {
+        "unmet_critical_kwh": 0.0,
+        "generator_fuel_l_used": 0.0,
+        "time_v_crit_out_of_band_s": 0.0,
+        "transfers": 0,
+        "total_dropout_ms": 0.0,
+        "time_in_support_or_island_s": 0.0,
+        "peak_grid_import_kw": 0.0
+    }
+    
+    last_sts_state = "GRID_PASS"
+    initial_fuel = plant.generator.fuel_liters
+    
+    comms_loss = scenario_config.get("comms_loss", False)
+    
+    next_forecast_time = current_time
+    expected_esh = {}
+    shadow_esh = {}
+    
+    while current_time < end_time:
+        # Update Solar Availability
+        if 8 <= current_time.hour <= 16:
+            solar_factor = 0.2 if scenario_config.get("low_solar", False) else 1.0
+        else:
+            solar_factor = 0.0
+        plant.solar.set_availability(solar_factor)
+        
+        telemetry = {
+            "ts": current_time.isoformat() + "Z",
+            "v_rms_pu": plant.v_pcc_pu,
+            "grid_connected": True,
+            "soc": plant.battery.soc,
+            "fuel_liters": plant.generator.fuel_liters,
+            "gen_available": True
+        }
+        
+        cmd = None
+        is_comms_healthy = True
+        if comms_loss and current_time.hour >= 18 and current_time.hour < 20:
+            is_comms_healthy = False
+            
+        if is_comms_healthy:
+            if use_baseline:
+                cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry)
+            else:
+                if current_time >= next_forecast_time:
+                    forecast = generate_rule_forecast(current_time, 12*3600, 300)
+                    expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=False)
+                    shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast, assume_island=True)
+                    next_forecast_time += datetime.timedelta(seconds=900)
+                cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry, expected_esh, shadow_esh)
+        
+        # Generator fault injection
+        if scenario_config.get("gen_fault") and current_time.hour >= 18:
+            plant.generator.is_available = False
+
+        res = plant.step(dt_s, current_time, cmd)
+        
+        # Accumulate metrics
+        telem = res["plant_telem"]
+        
+        metrics["unmet_critical_kwh"] += (telem["unserved_kw"] * (dt_s / 3600.0))
+        if telem["v_crit_pu"] < 0.94 or telem["v_crit_pu"] > 1.06:
+            metrics["time_v_crit_out_of_band_s"] += dt_s
+            
+        if telem["sts_state"] != last_sts_state:
+            metrics["transfers"] += 1
+            last_sts_state = telem["sts_state"]
+            
+        metrics["total_dropout_ms"] += telem["dropout_ms"]
+        
+        if telem["sts_state"] in ["SUPPORT", "ISLAND"]:
+            metrics["time_in_support_or_island_s"] += dt_s
+            
+        if plant.last_p_site_kw > metrics["peak_grid_import_kw"]:
+            metrics["peak_grid_import_kw"] = plant.last_p_site_kw
+            
+        current_time += datetime.timedelta(seconds=dt_s)
+        
+    metrics["generator_fuel_l_used"] = initial_fuel - plant.generator.fuel_liters
+    
+    return metrics
+
+def main():
+    start_dt = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    scenarios = {
+        "S1_peak_mild_sag": {
+            "bg_peak_kw": 450.0, # Pulls voltage down just to ~0.94
+        },
+        "S2_peak_sustained_uv": {
+            "bg_peak_kw": 550.0, # Pulls voltage down to ~0.89 for several hours
+        },
+        "S3_peak_short_sags": {
+            "bg_peak_kw": 400.0,
+            "sags": [
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=10), "duration_s": 5, "depth": 0.2},
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=15), "duration_s": 30, "depth": 0.2},
+                {"start": start_dt + datetime.timedelta(hours=6, minutes=20), "duration_s": 60, "depth": 0.2}
+            ]
+        },
+        "S4_sag_then_outage": {
+            "bg_peak_kw": 500.0,
+            "sags": [
+                {"start": start_dt + datetime.timedelta(hours=6), "duration_s": 4*3600, "depth": 1.0} # Complete outage at 18:00
+            ]
+        },
+        "S5_sag_low_solar": {
+            "bg_peak_kw": 550.0,
+            "low_solar": True
+        },
+        "S6_sag_gen_fault": {
+            "bg_peak_kw": 550.0,
+            "gen_fault": True
+        },
+        "S7_comms_loss": {
+            "bg_peak_kw": 550.0,
+            "comms_loss": True
+        },
+        "S8_sensor_noise": {
+            "bg_peak_kw": 550.0,
+            "noise_sigma": 0.05
+        }
+    }
+    
+    results = {}
+    
+    for s_name, s_config in scenarios.items():
+        print(f"Running {s_name} with Baseline...")
+        base_metrics = run_simulation(s_name, s_config, use_baseline=True)
+        print(f"Running {s_name} with GridGuard...")
+        gg_metrics = run_simulation(s_name, s_config, use_baseline=False)
+        
+        results[s_name] = {
+            "baseline": base_metrics,
+            "gridguard": gg_metrics
+        }
+        
+        # Save individual
+        with open(f"results/phase1/{s_name}.json", "w") as f:
+            json.dump(results[s_name], f, indent=2)
+            
+    # Print summary
+    print("\n--- PHASE 1 EXPERIMENT SUMMARY ---")
+    for s_name, data in results.items():
+        base = data["baseline"]
+        gg = data["gridguard"]
+        print(f"\nScenario: {s_name}")
+        print(f"  Critical V out-of-band: Baseline = {base['time_v_crit_out_of_band_s']}s, GridGuard = {gg['time_v_crit_out_of_band_s']}s")
+        print(f"  Unmet critical load: Baseline = {base['unmet_critical_kwh']:.3f}kWh, GridGuard = {gg['unmet_critical_kwh']:.3f}kWh")
+        print(f"  Transfers: Baseline = {base['transfers']}, GridGuard = {gg['transfers']}")
+        print(f"  Gen Fuel: Baseline = {base['generator_fuel_l_used']:.1f}L, GridGuard = {gg['generator_fuel_l_used']:.1f}L")
+        
+if __name__ == "__main__":
+    main()
+
+===== experiments\run_ablation.py =====
+
+import datetime
+import pandas as pd
+import json
+
+from physical.plant import PhysicalPlant
+from physical.feeder import SagEvent
+from intelligence.baseline import BaselineController
+from intelligence.decision_engine import DecisionEngine
+from intelligence.esh import ESHCalculator
+from intelligence.forecast.rule import RuleForecastService
+from intelligence.forecast.ml import MLForecastService
+
+def run_ablation_variant(variant_name, scenario_config, use_baseline=False, forecaster=None, risk_level="median"):
+    config = {
+        "z_pu": 0.1,
+        "p_feeder_rating_kw": 500.0,
+        "bg_peak_kw": scenario_config.get("bg_peak_kw", 300.0),
+        "noise_sigma_pu": scenario_config.get("noise_sigma", 0.0),
+        "inverter_rating_kw": 20.0,
+        "battery_capacity_kwh": 40.0,
+        "generator_capacity_kw": 15.0,
+        "critical_kw": 4.0,
+        "important_kw": 3.0,
+        "non_essential_kw": 2.0,
+        "watchdog_s": 90.0
+    }
+    
+    plant = PhysicalPlant(config)
+    for sag in scenario_config.get("sags", []):
+        plant.feeder.add_sag_event(SagEvent(sag["start"], sag["duration_s"], sag["depth"]))
+        
+    if use_baseline:
+        controller = BaselineController()
+    else:
+        controller = DecisionEngine(config)
+        esh_calc = ESHCalculator(config)
+        
+    current_time = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    dt_s = 60.0 # 1-min steps for speed
+    end_time = datetime.datetime(2026, 1, 2, 0, 0, 0)
+    
+    metrics = {
+        "Variant": variant_name,
+        "Unmet Critical (kWh)": 0.0,
+        "Fuel Used (L)": 0.0,
+        "V Out-of-band (s)": 0.0,
+        "Transfers": 0
+    }
+    
+    last_sts_state = "GRID_PASS"
+    initial_fuel = plant.generator.fuel_liters
+    telemetry_history = []
+    
+    while current_time < end_time:
+        telemetry = {
+            "ts": current_time.isoformat() + "Z",
+            "v_rms_pu": plant.v_pcc_pu,
+            "grid_connected": True,
+            "soc": plant.battery.soc,
+            "fuel_liters": plant.generator.fuel_liters,
+            "gen_available": True
+        }
+        telemetry_history.append(telemetry)
+        if len(telemetry_history) > 24:
+            telemetry_history.pop(0)
+            
+        cmd = None
+        if use_baseline:
+            cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry)
+        else:
+            fb = forecaster.forecast(telemetry_history, current_time, 12*3600)
+            
+            # Convert bundle to forecast list for ESH
+            forecast_list = []
+            steps = len(fb.grid_ok_prob)
+            solar_key = "p10" if risk_level == "pessimistic" else "p50"
+            load_key = "p90" if risk_level == "pessimistic" else "p50"
+            
+            for i in range(steps):
+                forecast_list.append({
+                    "solar_kw": float(fb.solar_kw[solar_key][i]),
+                    "load_critical_kw": float(fb.load_kw[load_key][i]),
+                    "grid_ok_prob": float(fb.grid_ok_prob[i])
+                })
+                
+            expected_esh = esh_calc.calculate_forecast_esh(telemetry, forecast_list, assume_island=False)
+            shadow_esh = esh_calc.calculate_forecast_esh(telemetry, forecast_list, assume_island=True)
+            cmd = controller.evaluate(dt_s, (current_time - datetime.datetime(2026, 1, 1, 12, 0)).total_seconds(), telemetry, expected_esh, shadow_esh)
+
+        res = plant.step(dt_s, current_time, cmd)
+        telem = res["plant_telem"]
+        
+        if telem["unserved_kw"] > 0:
+            print(f"[{current_time}] UNSERVED: {telem['unserved_kw']:.2f}kW, SOC={telem['soc']:.1f}%, Gen={telem['sts_state']}, Load={telem['load_critical_kw']:.1f}, Cmd={cmd}")
+        metrics["Unmet Critical (kWh)"] += (telem["unserved_kw"] * (dt_s / 3600.0))
+        if telem["v_crit_pu"] < 0.94 or telem["v_crit_pu"] > 1.06:
+            metrics["V Out-of-band (s)"] += dt_s
+            
+        if telem["sts_state"] != last_sts_state:
+            metrics["Transfers"] += 1
+            last_sts_state = telem["sts_state"]
+            
+        current_time += datetime.timedelta(seconds=dt_s)
+        
+    metrics["Fuel Used (L)"] = initial_fuel - plant.generator.fuel_liters
+    return metrics
+
+if __name__ == "__main__":
+    start_dt = datetime.datetime(2026, 1, 1, 12, 0, 0)
+    scenario = {
+        "bg_peak_kw": 500.0,
+        "sags": [
+            {"start": start_dt + datetime.timedelta(hours=6), "duration_s": 4*3600, "depth": 1.0} # 4h outage
+        ]
+    }
+    
+    print("Running Ablation Study (Scenario S4: Sag then Outage)...")
+    
+    rule_forecaster = RuleForecastService()
+    ml_forecaster = MLForecastService()
+    
+    res_a0 = run_ablation_variant("A0: Baseline", scenario, use_baseline=True)
+    print("Finished A0")
+    res_a1 = run_ablation_variant("A1: GG Rule Median", scenario, use_baseline=False, forecaster=rule_forecaster, risk_level="median")
+    print("Finished A1")
+    res_a2 = run_ablation_variant("A2: GG ML Median", scenario, use_baseline=False, forecaster=ml_forecaster, risk_level="median")
+    print("Finished A2")
+    res_a3 = run_ablation_variant("A3: GG ML Pessimistic", scenario, use_baseline=False, forecaster=ml_forecaster, risk_level="pessimistic")
+    print("Finished A3")
+    
+    df = pd.DataFrame([res_a0, res_a1, res_a2, res_a3])
+    df.to_csv("results/phase2/ablation.csv", index=False)
+    print("\n--- Ablation Results ---")
+    print(df.to_string(index=False))

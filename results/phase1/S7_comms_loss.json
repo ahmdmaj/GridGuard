@@ -16,5 +16,18 @@
     "total_dropout_ms": 10.0,
     "time_in_support_or_island_s": 23330.0,
     "peak_grid_import_kw": 9.0
+  },
+  "provenance": {
+    "git_commit": "bb4bb64f2789179f93dabe30faf46aaec8e5c1d1",
+    "git_dirty": true,
+    "config": {
+      "bg_peak_kw": 550.0,
+      "comms_loss": true
+    },
+    "config_sha256": "b650783774a94a5a13ffdeb591c064357bc302f41d190f6f5c2b099458ae11af",
+    "seed": null,
+    "python_version": "3.14.5",
+    "sklearn_version": "1.9.1",
+    "generated_at": "2026-10-04T10:52:42.422565+00:00"
   }
 }

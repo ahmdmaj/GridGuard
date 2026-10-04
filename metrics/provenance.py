@@ -4,15 +4,19 @@ import json
 import datetime
 import sys
 
+# Cache git status at module load time so generated results don't mark themselves as dirty
+_GIT_COMMIT = "unknown"
+_GIT_DIRTY = False
+try:
+    _GIT_COMMIT = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+    _GIT_DIRTY = bool(status)
+except Exception:
+    pass
+
 def get_provenance(config, seed=None):
-    git_commit = "unknown"
-    git_dirty = False
-    try:
-        git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
-        git_dirty = bool(status)
-    except Exception:
-        pass
+    git_commit = _GIT_COMMIT
+    git_dirty = _GIT_DIRTY
         
     sklearn_version = "unknown"
     try:
