@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "unmet_critical_kwh": 5.596906250000963,
+    "generator_fuel_l_used": 100.0,
+    "time_v_crit_out_of_band_s": 140.0,
+    "transfers": 56,
+    "total_dropout_ms": 560.0,
+    "time_in_support_or_island_s": 19050.0,
+    "peak_grid_import_kw": 8.846207717020919
+  },
+  "gridguard": {
+    "unmet_critical_kwh": 18.248204861111518,
+    "generator_fuel_l_used": 100.0,
+    "time_v_crit_out_of_band_s": 10.0,
+    "transfers": 2,
+    "total_dropout_ms": 20.0,
+    "time_in_support_or_island_s": 22250.0,
+    "peak_grid_import_kw": 9.0
+  }
+}
