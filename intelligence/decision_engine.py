@@ -143,15 +143,19 @@ class DecisionEngine:
             self.connect_flexible = False
             self.connect_important = False
         else:
-            if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
-                self.connect_flexible = False
-            elif full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
-                self.connect_flexible = True
+            if self.connect_flexible:
+                if full_esh.get("all_loads_hours", 100.0) < self.shed_flexible_esh:
+                    self.connect_flexible = False
+            else:
+                if full_esh.get("critical_and_important_hours", 0.0) >= self.reconnect_flexible_esh:
+                    self.connect_flexible = True
 
-            if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
-                self.connect_important = False
-            elif full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
-                self.connect_important = True
+            if self.connect_important:
+                if full_esh.get("critical_and_important_hours", 100.0) < self.shed_important_esh:
+                    self.connect_important = False
+            else:
+                if full_esh.get("critical_only_hours", 0.0) >= self.reconnect_important_esh:
+                    self.connect_important = True
 
         # Generator logic (F3: Start when ESH_island_critical_worst_case <= T_gen_delay + T_margin)
         if not self.generator_requested:
