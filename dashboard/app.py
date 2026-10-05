@@ -120,12 +120,11 @@ if st.session_state.is_running and st.session_state.current_time < end_time:
     # 2. SYNC DIGITAL TWIN (Before Step)
     # Generate telemetry inline to avoid Streamlit module caching issues
     preview_v_pcc = max(0.0, plant.feeder.get_voltage_pu(current_time, plant.last_p_site_kw))
-    grid_connected = (plant.inverter.current_mode.value != "ISLAND")
     
     telemetry_snapshot = {
         "ts": current_time.isoformat() + "Z",
         "v_rms_pu": preview_v_pcc,
-        "grid_connected": grid_connected,
+        "grid_connected": not grid_outage,
         "soc": plant.battery.soc,
         "fuel_liters": plant.generator.fuel_liters,
         "gen_available": plant.generator.is_available,
