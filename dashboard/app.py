@@ -10,7 +10,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from physical.plant import PhysicalPlant
 from physical.feeder import SagEvent
+
+import intelligence.decision_engine
+import importlib
+importlib.reload(intelligence.decision_engine)
 from intelligence.decision_engine import DecisionEngine
+
 from metrics.esh import ESHCalculator
 from digital_twin.state import DigitalTwinState, GridState, SolarState, BatteryState, GeneratorState, LoadState
 from forecasting.service import MLForecastService
