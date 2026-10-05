@@ -178,9 +178,6 @@ class DecisionEngine:
                 if soc >= self.cfg.generator_stop_soc:
                     trace.append(f"Generator normal stop: SOC {soc:.1f}% >= {self.cfg.generator_stop_soc}%")
                     self.generator_requested = False
-                elif shadow_esh.get("all_loads_hours", 0.0) > self.cfg.generator_stop_esh_hours:
-                    trace.append(f"Generator early stop: Battery ESH {shadow_esh.get('all_loads_hours')}h > {self.cfg.generator_stop_esh_hours}h")
-                    self.generator_requested = False
                 
         if self.generator_requested:
             self.current_mode = EngineMode.GENERATOR_ASSIST

@@ -38,6 +38,7 @@ if "initialized" not in st.session_state:
         "important_kw": 3.0,
         "non_essential_kw": 2.0,
         "generator_start_esh_hours": 2.0,
+        "generator_stop_soc": 50.0,
     }
     
     st.session_state.plant = PhysicalPlant(config)
@@ -87,6 +88,7 @@ if col3.button("🔄 Reset Simulation"):
         "important_kw": 3.0,
         "non_essential_kw": 2.0,
         "generator_start_esh_hours": 2.0,
+        "generator_stop_soc": 50.0,
     }
     st.session_state.plant = PhysicalPlant(config)
     st.session_state.controller = DecisionEngine(config)
