@@ -110,7 +110,7 @@ class DecisionEngine:
         elif v_pcc < self.cfg.v_support_enter and self.time_v_below_enter >= self.cfg.t_support_enter_s:
             if target_mode == EngineMode.NORMAL:
                 target_mode = EngineMode.SUPPORT
-        elif v_pcc >= self.cfg.v_support_exit and self.time_v_above_exit >= self.cfg.t_normal_return_s and soc >= self.cfg.reserve_floor_soc:
+        elif v_pcc >= self.cfg.v_support_exit and self.time_v_above_exit >= self.cfg.t_normal_return_s:
             if target_mode in [EngineMode.SUPPORT, EngineMode.ISLAND]:
                 target_mode = EngineMode.NORMAL
                 
