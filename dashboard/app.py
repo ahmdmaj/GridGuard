@@ -176,7 +176,8 @@ if st.session_state.is_running and st.session_state.current_time < end_time:
         "Reason": cmd["reason"] if cmd else "Comms Lost - Local Protection Active",
         "generator_run": plant.generator.is_running,
         "connect_flexible": plant.loads.connected["non_essential"],
-        "connect_important": plant.loads.connected["important"]
+        "connect_important": plant.loads.connected["important"],
+        "solar_kw": telem["solar_kw"]
     })
     
     st.session_state.current_time += datetime.timedelta(seconds=dt_s)
@@ -189,14 +190,18 @@ if len(st.session_state.history) > 0:
     
     st.subheader("System Status")
     latest = st.session_state.history[-1]
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         gen_status = "🟢 ON" if latest.get("generator_run", False) else "⚪ OFF"
         st.metric("Generator", gen_status)
     with col_b:
+        solar_val = latest.get("solar_kw", 0.0)
+        solar_status = f"🟢 ACTIVE" if solar_val > 0 else "⚪ OFF"
+        st.metric("Solar Array", solar_status)
+    with col_c:
         flex_status = "🔴 SHED" if not latest.get("connect_flexible", True) else "🟢 ACTIVE"
         st.metric("Flexible Loads", flex_status)
-    with col_c:
+    with col_d:
         imp_status = "🔴 SHED" if not latest.get("connect_important", True) else "🟢 ACTIVE"
         st.metric("Important Loads", imp_status)
         
