@@ -153,6 +153,10 @@ if st.session_state.is_running and st.session_state.current_time < end_time:
         
         # 3. AI MAKES DECISION
         cmd = controller.evaluate(dt_s, (current_time - start_dt).total_seconds(), telemetry_snapshot, expected_esh, shadow_esh)
+        
+        # DEMO OVERRIDE: Never shed Important Loads (Tier 2). Cap shedding at Tier 1 (Flexible only).
+        if cmd and cmd.get("shed_tier", 0) == 2:
+            cmd["shed_tier"] = 1
     else:
         expected_esh = {"critical_only_hours": 0}
         shadow_esh = {"critical_only_hours": 0}
