@@ -135,10 +135,10 @@ class DecisionEngine:
             
         # Load shedding logic (F3: Critical Reserve SOC)
         if soc <= self.cfg.critical_reserve_soc:
-            if self.connect_flexible or self.connect_important:
-                trace.append(f"Emergency shed: SOC {soc:.1f}% <= {self.cfg.critical_reserve_soc}%")
+            if self.connect_flexible:
+                trace.append(f"Emergency shed flexible: SOC {soc:.1f}% <= {self.cfg.critical_reserve_soc}%")
             self.connect_flexible = False
-            self.connect_important = False
+            # Important loads remain connected at this threshold
         else:
             if self.connect_flexible:
                 if full_esh.get("all_loads_hours", 100.0) < self.cfg.shed_flexible_esh:
