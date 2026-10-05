@@ -149,14 +149,8 @@ class DecisionEngine:
                     trace.append(f"Reconnect flexible: crit+imp ESH {full_esh.get('critical_and_important_hours')}h >= {self.cfg.reconnect_flexible_esh}h")
                     self.connect_flexible = True
 
-            if self.connect_important:
-                if full_esh.get("critical_and_important_hours", 100.0) < self.cfg.shed_important_esh:
-                    trace.append(f"Shed important: crit+imp ESH {full_esh.get('critical_and_important_hours')}h < {self.cfg.shed_important_esh}h")
-                    self.connect_important = False
-            else:
-                if full_esh.get("critical_only_hours", 0.0) >= self.cfg.reconnect_important_esh:
-                    trace.append(f"Reconnect important: crit only ESH {full_esh.get('critical_only_hours')}h >= {self.cfg.reconnect_important_esh}h")
-                    self.connect_important = True
+            # Important loads are forced to stay connected for the demonstration
+            self.connect_important = True
 
         # Generator logic (F3: Start when shadow_esh critical worst case <= T_gen_delay + T_margin)
         if target_mode == EngineMode.NORMAL:
